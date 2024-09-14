@@ -1,5 +1,10 @@
 import readline from "readline";
-import { makeWASocket, useMultiFileAuthState, fetchLatestWaWebVersion } from "@whiskeysockets/baileys";
+import {
+  makeWASocket,
+  useMultiFileAuthState,
+  fetchLatestWaWebVersion,
+  DisconnectReason,
+} from "@whiskeysockets/baileys";
 import { ConsoleColors, SendMethods, TargetNumberSuffix } from "./modules/constants.js";
 import { consoleLogColor, fetchWhatsAppVersion } from "./modules/utils.js";
 import { showMainMenu } from "./modules/menu.js";
@@ -30,8 +35,6 @@ async function getWhatsAppVersion() {
   if (!configVersion.every((v, i) => v === currentVersion[i])) {
     consoleLogColor(`Versão do WhatsApp: ${currentVersion.join(".")}`, ConsoleColors.CYAN, false);
     consoleLogColor("Versão do WhatsApp atualizada. Salvando nova configuração...", ConsoleColors.YELLOW);
-    Config.WA_VERSION = currentVersion;
-    saveConfig();
   }
   return currentVersion;
 }
@@ -76,7 +79,7 @@ async function runWhatsAppBot() {
     auth: state,
     version: currentVersion,
     printQRInTerminal: true,
-    logger: pino({ level: "fatal" }),
+    logger: pino({ level: "silent" }),
   });
 
   // WhatsApp connection
@@ -86,7 +89,9 @@ async function runWhatsAppBot() {
     if (connection === "close") {
       consoleLogColor(`Conexão fechada devido ao erro: \n${lastDisconnect.error}`, ConsoleColors.RED);
 
-      if (reconnectionAttempts > 0) {
+      const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut;
+
+      if (shouldReconnect && reconnectionAttempts > 0) {
         reconnectionAttempts--;
         consoleLogColor(
           `Tentando reconectar...\nTentativa ${Config.MAX_RECONNECTION_ATTEMPTS - reconnectionAttempts} de ${
@@ -94,9 +99,13 @@ async function runWhatsAppBot() {
           }`,
           ConsoleColors.YELLOW
         );
-        await delay(1);
-        sock.ev.removeAllListeners();
-        runWhatsAppBot();
+        try {
+          await delay(1);
+          sock.ev.removeAllListeners();
+          await runWhatsAppBot();
+        } catch (err) {
+          consoleLogColor(`Erro durante nova chamada de runWhatsAppBot:\n${err}`, ConsoleColors.RED);
+        }
         return;
       } else {
         consoleLogColor("Máximo de tentativas de reconexão atingido.", ConsoleColors.RED);
@@ -105,10 +114,14 @@ async function runWhatsAppBot() {
         process.exit(0);
       }
     } else if (connection === "open") {
+      if (Config.WA_VERSION != currentVersion) {
+        Config.WA_VERSION = currentVersion;
+        saveConfig();
+      }
       reconnectionAttempts = Config.MAX_RECONNECTION_ATTEMPTS;
       consoleLogColor("👋 Bot inicializado e pronto.", ConsoleColors.GREEN);
       consoleLogColor(
-        "--------------------------------------------------------------------------------",
+        "--------------------------------------------------------------------------------\n",
         ConsoleColors.RESET,
         false
       );
@@ -127,7 +140,11 @@ async function runWhatsAppBot() {
 
       const sender = waMessage.key.remoteJid;
 
-      if (Config.AUTHORIZED_NUMBERS.some((number) => sender.includes(number)) && !waMessage.key.fromMe) {
+      if (
+        !sender.endsWith("g.us") &&
+        Config.AUTHORIZED_NUMBERS.some((number) => sender.includes(number)) &&
+        !waMessage.key.fromMe
+      ) {
         const formattedNumber = sender
           .replace(TargetNumberSuffix, "")
           .replace(/^(\d+)(\d{2})(\d{4})(\d{4})$/, (_, countryCode, areaCode, part1, part2) => {
@@ -151,8 +168,10 @@ async function runWhatsAppBot() {
             const groupMetadata = await sock.groupMetadata(waMessage.key.remoteJid);
             const groupObject = { id: groupMetadata.id, subject: groupMetadata.subject };
 
-            const hasKeyword = Config.GROUP_NAME_KEYWORDS.some((keyword) => groupObject.subject.includes(keyword));
-            const amIGroupOwner = groupMetadata.owner?.includes(Config.OWN_NUMBER);
+            const hasKeyword = Config.GROUP_NAME_KEYWORDS.some((keyword) =>
+              groupObject.subject.toLowerCase().includes(keyword.toLowerCase())
+            );
+            const amIGroupOwner = Config.OWN_NUMBER && groupMetadata.owner?.includes(Config.OWN_NUMBER);
 
             const shouldAddGroup = hasKeyword || amIGroupOwner;
             if (shouldAddGroup) {
@@ -175,7 +194,9 @@ async function runWhatsAppBot() {
     }
 
     if (MessagePool.length > 0 && !isSending) {
-      sendMessagesFromPool();
+      sendMessagesFromPool().catch((err) => {
+        consoleLogColor(`Erro em sendMessagesFromPool:\n${err}`, ConsoleColors.RED);
+      });
     }
   });
 
@@ -208,7 +229,7 @@ async function runWhatsAppBot() {
                 if (urlMatch) {
                   const url = urlMatch[0];
                   const response = await fetch(url);
-                  if (response.ok) {
+                  if (response?.ok) {
                     const html = await response.text();
                     const ogImageMatch = html.match(/<meta property="og:image" content="([^"]+)"/);
                     if (ogImageMatch) {
@@ -228,11 +249,11 @@ async function runWhatsAppBot() {
                 }
               } catch (error) {
                 consoleLogColor(`Erro ao processar imagem: ${error.message}`, ConsoleColors.RED);
-                consoleLogColor("Enviando como texto...", ConsoleColors.YELLOW);
-                await sock.sendMessage(chat.id, { text: waMessage.message.extendedTextMessage.text });
+                consoleLogColor("Enviando como encaminhamento...", ConsoleColors.YELLOW);
+                await sock.sendMessage(chat.id, { forward: waMessage });
               }
-
               break;
+
             default:
               await sock.sendMessage(chat.id, { text: waMessage.message.extendedTextMessage.text });
               break;
@@ -280,4 +301,6 @@ async function runWhatsAppBot() {
 }
 
 setupInputListener();
-runWhatsAppBot();
+runWhatsAppBot().catch((err) => {
+  consoleLogColor(`Erro na primeira execução de runWhatsAppBot:\n${err}`, ConsoleColors.RED);
+});

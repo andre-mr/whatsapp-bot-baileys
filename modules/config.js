@@ -17,10 +17,8 @@ export function loadConfig() {
     const configPath = join(__dirname, "./config.json");
     const data = fs.readFileSync(configPath, "utf8");
     Config = JSON.parse(data);
-    consoleLogColor("Configuração carregada com sucesso", ConsoleColors.GREEN);
-    const configSummary = `Grupos Autorizados: ${Config.AUTHORIZED_GROUPS.length}
-Números Autorizados: ${Config.AUTHORIZED_NUMBERS.length}
-Método de Envio Padrão: ${
+    consoleLogColor("Configurações carregadas com sucesso\n", ConsoleColors.GREEN);
+    const configSummary = `Método de Envio Padrão: ${
       Config.DEFAULT_SEND_METHOD === SendMethods.FORWARD
         ? "Encaminhar"
         : Config.DEFAULT_SEND_METHOD === SendMethods.TEXT
@@ -31,7 +29,11 @@ Método de Envio Padrão: ${
     }
 Pausa entre Grupos: ${Config.DELAY_BETWEEN_GROUPS} segundos
 Pausa entre Mensagens: ${Config.DELAY_BETWEEN_MESSAGES} segundos
-Versão do WhatsApp: ${Config.WA_VERSION.join(".")}
+Números Autorizados: ${Config.AUTHORIZED_NUMBERS.length}
+Grupos Autorizados: ${Config.AUTHORIZED_GROUPS.length}
+Palavras-chave para grupos: ${Config.GROUP_NAME_KEYWORDS.length}
+Número do bot: "${Config.OWN_NUMBER}"
+Versão do WhatsApp: "${Config.WA_VERSION.join(".")}"
 `;
     consoleLogColor(configSummary, ConsoleColors.CYAN, false);
     return Config;
@@ -44,8 +46,8 @@ Versão do WhatsApp: ${Config.WA_VERSION.join(".")}
       GROUP_NAME_KEYWORDS: [],
       DEFAULT_SEND_METHOD: SendMethods.FORWARD,
       DELAY_BETWEEN_GROUPS: 2,
-      DELAY_BETWEEN_MESSAGES: 30,
-      MAX_RECONNECTION_ATTEMPTS: 1,
+      DELAY_BETWEEN_MESSAGES: 20,
+      MAX_RECONNECTION_ATTEMPTS: 5,
       OWN_NUMBER: "",
       WA_VERSION: [2, 3000, 1015901307],
     };
@@ -60,7 +62,6 @@ export function saveConfig() {
     const __dirname = dirname(__filename);
     const configPath = join(__dirname, "./config.json");
     fs.writeFileSync(configPath, JSON.stringify(Config, null, 2), "utf8");
-    consoleLogColor("Configuração salva com sucesso", ConsoleColors.GREEN);
   } catch (err) {
     consoleLogColor("Erro ao salvar o arquivo de configuração: " + err, ConsoleColors.RED);
   }
@@ -108,7 +109,9 @@ Pausa entre grupos: ${Config.DELAY_BETWEEN_GROUPS} segundos
 Pausa entre mensagens: ${Config.DELAY_BETWEEN_MESSAGES} segundos
 Números autorizados: ${Config.AUTHORIZED_NUMBERS.map((num) => `"${num}"`).join(", ")}
 Grupos autorizados: ${Config.AUTHORIZED_GROUPS.map((group) => `"${group.subject}"`).join(", ")}
-Palavras-chave para grupos: ${Config.GROUP_NAME_KEYWORDS.map((keyword) => `"${keyword}"`).join(", ")}`;
+Palavras-chave para grupos: ${Config.GROUP_NAME_KEYWORDS.map((keyword) => `"${keyword}"`).join(", ")}
+Número do bot: "${Config.OWN_NUMBER}"
+Versão do WhatsApp: "${Config.WA_VERSION.join(".")}"`;
 
   consoleLogColor(configFormatted, ConsoleColors.CYAN, false);
 }
