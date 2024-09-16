@@ -6,7 +6,7 @@ import {
   DisconnectReason,
 } from "@whiskeysockets/baileys";
 import { ConsoleColors, SendMethods, TargetNumberSuffix } from "./modules/constants.js";
-import { consoleLogColor, fetchWhatsAppVersion } from "./modules/utils.js";
+import { consoleLogColor, fetchWhatsAppVersion, deepEqual } from "./modules/utils.js";
 import { showMainMenu } from "./modules/menu.js";
 import { Config, saveConfig, SessionStats } from "./modules/config.js";
 import pino from "pino";
@@ -14,6 +14,7 @@ import pino from "pino";
 let rl;
 let reconnectionAttempts = Config.MAX_RECONNECTION_ATTEMPTS || 1;
 let MessagePool = [];
+let GroupMetadataCache = {};
 
 const { state, saveCreds } = await useMultiFileAuthState("auth");
 const currentVersion = await getWhatsAppVersion();
@@ -75,11 +76,15 @@ function delay(seconds) {
 // Main function that controls the WhatsApp connection
 async function runWhatsAppBot() {
   consoleLogColor("Iniciando a aplicação...", ConsoleColors.YELLOW, true);
+
   const sock = makeWASocket({
     auth: state,
     version: currentVersion,
     printQRInTerminal: true,
     logger: pino({ level: "silent" }),
+    cachedGroupMetadata: async (jid) => {
+      return GroupMetadataCache[jid];
+    },
   });
 
   // WhatsApp connection
@@ -114,6 +119,32 @@ async function runWhatsAppBot() {
         process.exit(0);
       }
     } else if (connection === "open") {
+      const currentGroupMetadata = await sock.groupFetchAllParticipating();
+      const filteredGroupMetadata = Object.keys(currentGroupMetadata)
+        .filter((key) => {
+          const subject = currentGroupMetadata[key].subject.toLowerCase();
+          return Config.GROUP_NAME_KEYWORDS.some((keyword) => subject.includes(keyword.toLowerCase()));
+        })
+        .sort((a, b) => {
+          const subjectA = currentGroupMetadata[a].subject.toLowerCase();
+          const subjectB = currentGroupMetadata[b].subject.toLowerCase();
+          return subjectA.localeCompare(subjectB);
+        })
+        .reduce((result, key) => {
+          result[key] = currentGroupMetadata[key];
+          return result;
+        }, {});
+
+      if (
+        filteredGroupMetadata &&
+        Object.keys(filteredGroupMetadata).length > 0 &&
+        (Object.keys(GroupMetadataCache).length === 0 || !deepEqual(filteredGroupMetadata, GroupMetadataCache))
+      ) {
+        GroupMetadataCache = filteredGroupMetadata;
+        SessionStats.totalGroups = Object.keys(GroupMetadataCache).length;
+        consoleLogColor("Lista de grupos atualizada", ConsoleColors.YELLOW);
+      }
+
       if (Config.WA_VERSION != currentVersion) {
         Config.WA_VERSION = currentVersion;
         saveConfig();
@@ -162,32 +193,10 @@ async function runWhatsAppBot() {
           MessagePool.push(waMessage);
         }
       } else {
-        // Check if the message is from a group
-        if (sender.endsWith("@g.us")) {
-          if (!Config.AUTHORIZED_GROUPS.some((group) => group.id === sender)) {
-            const groupMetadata = await sock.groupMetadata(waMessage.key.remoteJid);
-            const groupObject = { id: groupMetadata.id, subject: groupMetadata.subject };
-
-            const hasKeyword = Config.GROUP_NAME_KEYWORDS.some((keyword) =>
-              groupObject.subject.toLowerCase().includes(keyword.toLowerCase())
-            );
-            const amIGroupOwner = Config.OWN_NUMBER && groupMetadata.owner?.includes(Config.OWN_NUMBER);
-
-            const shouldAddGroup = hasKeyword || amIGroupOwner;
-            if (shouldAddGroup) {
-              consoleLogColor("Mensagem de novo grupo que atende os requisitos.", ConsoleColors.YELLOW);
-              Config.AUTHORIZED_GROUPS.push(groupObject);
-              Config.AUTHORIZED_GROUPS.sort((a, b) => a.subject.localeCompare(b.subject));
-              consoleLogColor(`Novo grupo adicionado: ${groupMetadata.subject}`, ConsoleColors.GREEN);
-              saveConfig();
-            }
-          }
-        }
-
         const key = {
           remoteJid: waMessage.key.remoteJid,
           id: waMessage.key.id,
-          participant: waMessage.key.participant,
+          participant: waMessage?.participant || undefined, // participant if group only
         };
         await sock.readMessages([key]);
       }
@@ -206,18 +215,22 @@ async function runWhatsAppBot() {
       return;
     }
 
-    if (Config.AUTHORIZED_GROUPS.length === 0) {
+    if (Object.keys(GroupMetadataCache).length === 0) {
       consoleLogColor("Não há grupos para enviar mensagens.", ConsoleColors.YELLOW);
       return;
     }
 
     isSending = true;
     while (MessagePool.length > 0) {
+      let currentSendMethod = Config.DEFAULT_SEND_METHOD;
       const waMessage = MessagePool.shift();
-      for (let i = 0; i < Config.AUTHORIZED_GROUPS.length; i++) {
-        const chat = Config.AUTHORIZED_GROUPS[i];
+      const groupIds = Object.keys(GroupMetadataCache); // Get all group IDs
+      for (let i = 0; i < groupIds.length; i++) {
+        // Use index to track remaining groups
+        const chatId = groupIds[i];
+        const chat = GroupMetadataCache[chatId];
         try {
-          switch (Config.DEFAULT_SEND_METHOD) {
+          switch (currentSendMethod) {
             case SendMethods.FORWARD:
               await sock.sendMessage(chat.id, { forward: waMessage });
               break;
@@ -251,6 +264,7 @@ async function runWhatsAppBot() {
                 consoleLogColor(`Erro ao processar imagem: ${error.message}`, ConsoleColors.RED);
                 consoleLogColor("Enviando como encaminhamento...", ConsoleColors.YELLOW);
                 await sock.sendMessage(chat.id, { forward: waMessage });
+                currentSendMethod = SendMethods.FORWARD;
               }
               break;
 
@@ -259,9 +273,13 @@ async function runWhatsAppBot() {
               break;
           }
           consoleLogColor(
-            `Mensagem enviada para o grupo: [${chat.subject}] - ${
-              Config.AUTHORIZED_GROUPS.length - i - 1
-            } grupos restantes`,
+            `${
+              currentSendMethod === SendMethods.FORWARD
+                ? "Mensagem encaminhada"
+                : currentSendMethod === SendMethods.IMAGE
+                ? "Imagem enviada"
+                : "Mensagem enviada"
+            } para '${chat.subject}' (${groupIds.length - i - 1} grupos restantes)`,
             ConsoleColors.RESET
           );
         } catch (error) {
@@ -271,7 +289,7 @@ async function runWhatsAppBot() {
         }
 
         // Check if there's a next group before pausing
-        if (i < Config.AUTHORIZED_GROUPS.length - 1) {
+        if (chatId !== groupIds[groupIds.length - 1]) {
           const randomDelay = Config.DELAY_BETWEEN_GROUPS + (Math.random() * 2 - 1);
           await delay(randomDelay);
         }
@@ -296,7 +314,7 @@ async function runWhatsAppBot() {
 
     isSending = false;
     consoleLogColor("", ConsoleColors.RESET, false);
-    consoleLogColor("✅ Todas as mensagens foram enviadas.", ConsoleColors.GREEN);
+    consoleLogColor("✅ Todas as mensagens foram enviadas.\n", ConsoleColors.GREEN);
   }
 }
 

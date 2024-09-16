@@ -1,5 +1,5 @@
 import fs from "fs";
-import { dirname, join } from "path";
+import path from "path";
 import { fileURLToPath } from "url";
 import { ConsoleColors, SendMethods } from "./constants.js";
 import { consoleLogColor } from "./utils.js";
@@ -7,14 +7,15 @@ import { consoleLogColor } from "./utils.js";
 let Config = {};
 const SessionStats = {
   startTime: new Date().toISOString(),
+  totalGroups: 0,
   totalMessagesSent: 0,
 };
 
 export function loadConfig() {
   try {
     const __filename = fileURLToPath(import.meta.url);
-    const __dirname = dirname(__filename);
-    const configPath = join(__dirname, "./config.json");
+    const __dirname = path.dirname(__filename);
+    const configPath = path.join(__dirname, "./config.json");
     const data = fs.readFileSync(configPath, "utf8");
     Config = JSON.parse(data);
     consoleLogColor("Configurações carregadas com sucesso\n", ConsoleColors.GREEN);
@@ -30,10 +31,9 @@ export function loadConfig() {
 Pausa entre Grupos: ${Config.DELAY_BETWEEN_GROUPS} segundos
 Pausa entre Mensagens: ${Config.DELAY_BETWEEN_MESSAGES} segundos
 Números Autorizados: ${Config.AUTHORIZED_NUMBERS.length}
-Grupos Autorizados: ${Config.AUTHORIZED_GROUPS.length}
 Palavras-chave para grupos: ${Config.GROUP_NAME_KEYWORDS.length}
-Número do bot: "${Config.OWN_NUMBER}"
-Versão do WhatsApp: "${Config.WA_VERSION.join(".")}"
+Número do bot: ${Config.OWN_NUMBER}
+Versão do WhatsApp: ${Config.WA_VERSION.join(".")}
 `;
     consoleLogColor(configSummary, ConsoleColors.CYAN, false);
     return Config;
@@ -41,7 +41,6 @@ Versão do WhatsApp: "${Config.WA_VERSION.join(".")}"
     consoleLogColor("Erro ao carregar a configuração: " + err, ConsoleColors.RED);
     consoleLogColor("Carregando configurações padrão... ", ConsoleColors.YELLOW);
     Config = {
-      AUTHORIZED_GROUPS: [],
       AUTHORIZED_NUMBERS: [],
       GROUP_NAME_KEYWORDS: [],
       DEFAULT_SEND_METHOD: SendMethods.FORWARD,
@@ -59,8 +58,8 @@ Versão do WhatsApp: "${Config.WA_VERSION.join(".")}"
 export function saveConfig() {
   try {
     const __filename = fileURLToPath(import.meta.url);
-    const __dirname = dirname(__filename);
-    const configPath = join(__dirname, "./config.json");
+    const __dirname = path.dirname(__filename);
+    const configPath = path.join(__dirname, "./config.json");
     fs.writeFileSync(configPath, JSON.stringify(Config, null, 2), "utf8");
   } catch (err) {
     consoleLogColor("Erro ao salvar o arquivo de configuração: " + err, ConsoleColors.RED);
@@ -96,7 +95,7 @@ Mensagens enviadas na sessão: ${SessionStats.totalMessagesSent}
 
 Configurações atuais:
 
-Método de envio padrão: "${
+Método de envio padrão: ${
     Config.DEFAULT_SEND_METHOD === SendMethods.FORWARD
       ? "Encaminhar"
       : Config.DEFAULT_SEND_METHOD === SendMethods.TEXT
@@ -104,14 +103,14 @@ Método de envio padrão: "${
       : Config.DEFAULT_SEND_METHOD === SendMethods.IMAGE
       ? "Imagem"
       : "Desconhecido"
-  }"
+  }
 Pausa entre grupos: ${Config.DELAY_BETWEEN_GROUPS} segundos
 Pausa entre mensagens: ${Config.DELAY_BETWEEN_MESSAGES} segundos
-Números autorizados: ${Config.AUTHORIZED_NUMBERS.map((num) => `"${num}"`).join(", ")}
-Grupos autorizados: ${Config.AUTHORIZED_GROUPS.map((group) => `"${group.subject}"`).join(", ")}
-Palavras-chave para grupos: ${Config.GROUP_NAME_KEYWORDS.map((keyword) => `"${keyword}"`).join(", ")}
-Número do bot: "${Config.OWN_NUMBER}"
-Versão do WhatsApp: "${Config.WA_VERSION.join(".")}"`;
+Números autorizados: ${Config.AUTHORIZED_NUMBERS.length}
+Palavras-chave para grupos: ${Config.GROUP_NAME_KEYWORDS.length}
+Grupos carregados para envio: ${SessionStats.totalGroups}
+Número do bot: ${Config.OWN_NUMBER}
+Versão do WhatsApp: ${Config.WA_VERSION.join(".")}`;
 
   consoleLogColor(configFormatted, ConsoleColors.CYAN, false);
 }

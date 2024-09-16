@@ -30,9 +30,8 @@ function displayMenuOptions() {
     "2. Pausa entre grupos",
     "3. Pausa entre mensagens",
     "4. Números autorizados",
-    "5. Grupos autorizados",
-    "6. Palavras-chave para grupos",
-    "7. Mostrar configurações",
+    "5. Palavras-chave para grupos",
+    "6. Mostrar configurações",
     "0. Sair do menu",
   ];
   consoleLogColor(menuOptions.join("\n"), ConsoleColors.BRIGHT, false);
@@ -58,14 +57,10 @@ async function handleMenuOption(option, rl) {
       return false;
 
     case "5":
-      await modifyAuthorizedGroups(rl);
-      return false;
-
-    case "6":
       await modifyArrayOption("GROUP_NAME_KEYWORDS", rl);
       return false;
 
-    case "7":
+    case "6":
       showCurrentConfig();
       return false;
 
@@ -333,73 +328,6 @@ function removeItem(option, optionName, rl) {
         }
       } else {
         consoleLogColor("Valor inválido. Nenhum item foi removido.", ConsoleColors.RED, false);
-      }
-      resolve();
-    });
-  });
-}
-
-function modifyAuthorizedGroups(rl) {
-  return new Promise((resolve) => {
-    consoleLogColor(
-      `\nGrupos autorizados:\n${Config.AUTHORIZED_GROUPS.map((group) => `${group.subject}`).join("\n")}`,
-      ConsoleColors.CYAN,
-      false
-    );
-
-    const subMenuOptions = ["1. Remover grupo", "0. Voltar ao menu principal"];
-    consoleLogColor("\n" + subMenuOptions.join("\n"), ConsoleColors.BRIGHT, false);
-
-    rl.question("\nEscolha uma opção: ", async (choice) => {
-      consoleLogColor(
-        "--------------------------------------------------------------------------------",
-        ConsoleColors.RESET,
-        false
-      );
-      switch (choice) {
-        case "1":
-          await removeAuthorizedGroup(rl);
-          modifyAuthorizedGroups(rl).then(resolve);
-          break;
-        case "0":
-          resolve();
-          break;
-        default:
-          consoleLogColor("Opção inválida.", ConsoleColors.RED, false);
-          modifyAuthorizedGroups(rl).then(resolve);
-          break;
-      }
-    });
-  });
-}
-
-function removeAuthorizedGroup(rl) {
-  return new Promise((resolve) => {
-    rl.question("Digite o nome do grupo para remover: ", (groupToRemove) => {
-      consoleLogColor(
-        "--------------------------------------------------------------------------------",
-        ConsoleColors.RESET,
-        false
-      );
-      if (groupToRemove && groupToRemove.trim() !== "") {
-        const initialLength = Config.AUTHORIZED_GROUPS.length;
-        Config.AUTHORIZED_GROUPS = Config.AUTHORIZED_GROUPS.filter((group) => group.subject !== groupToRemove.trim());
-        if (Config.AUTHORIZED_GROUPS.length < initialLength) {
-          saveConfig();
-          consoleLogColor(
-            `Grupo "${groupToRemove.trim()}" removido dos grupos autorizados.`,
-            ConsoleColors.GREEN,
-            false
-          );
-        } else {
-          consoleLogColor(
-            `Grupo "${groupToRemove.trim()}" não encontrado nos grupos autorizados.`,
-            ConsoleColors.YELLOW,
-            false
-          );
-        }
-      } else {
-        consoleLogColor("Nome de grupo inválido. Nenhum grupo foi removido.", ConsoleColors.RED, false);
       }
       resolve();
     });
