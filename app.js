@@ -1,3 +1,6 @@
+import path from "path";
+const appDirectoryName = path.basename(process.cwd());
+
 import readline from "readline";
 import {
   makeWASocket,
@@ -11,10 +14,13 @@ import { showMainMenu } from "./modules/menu.js";
 import { Config, saveConfig, SessionStats } from "./modules/config.js";
 import pino from "pino";
 
+process.stdout.write(`\x1b]2;${appDirectoryName} - ${Config.OWN_NUMBER}\x07`);
+
 let rl;
 let reconnectionAttempts = Config.MAX_RECONNECTION_ATTEMPTS || 1;
 let MessagePool = [];
 let GroupMetadataCache = {};
+let isConnecting = false;
 
 const { state, saveCreds } = await useMultiFileAuthState("auth");
 const currentVersion = await getWhatsAppVersion();
@@ -73,6 +79,32 @@ function delay(seconds) {
   return new Promise((resolve) => setTimeout(resolve, seconds * 1000));
 }
 
+async function updateGroupMetadataCache(newGroupMetadata) {
+  const filteredGroupMetadata = Object.keys(newGroupMetadata)
+    .filter((key) => {
+      const subject = newGroupMetadata[key].subject.toLowerCase();
+      return Config.GROUP_NAME_KEYWORDS.some((keyword) => subject.includes(keyword.toLowerCase()));
+    })
+    .sort((a, b) => {
+      const subjectA = newGroupMetadata[a].subject.toLowerCase();
+      const subjectB = newGroupMetadata[b].subject.toLowerCase();
+      return subjectA.localeCompare(subjectB);
+    })
+    .reduce((result, key) => {
+      result[key] = newGroupMetadata[key];
+      return result;
+    }, {});
+
+  if (
+    filteredGroupMetadata &&
+    Object.keys(filteredGroupMetadata).length > 0 &&
+    (Object.keys(GroupMetadataCache).length === 0 || !deepEqual(filteredGroupMetadata, GroupMetadataCache))
+  ) {
+    GroupMetadataCache = filteredGroupMetadata;
+    SessionStats.totalGroups = Object.keys(GroupMetadataCache).length;
+  }
+}
+
 // Main function that controls the WhatsApp connection
 async function runWhatsAppBot() {
   consoleLogColor("Iniciando a aplicação...", ConsoleColors.YELLOW, true);
@@ -119,31 +151,10 @@ async function runWhatsAppBot() {
         process.exit(0);
       }
     } else if (connection === "open") {
-      const currentGroupMetadata = await sock.groupFetchAllParticipating();
-      const filteredGroupMetadata = Object.keys(currentGroupMetadata)
-        .filter((key) => {
-          const subject = currentGroupMetadata[key].subject.toLowerCase();
-          return Config.GROUP_NAME_KEYWORDS.some((keyword) => subject.includes(keyword.toLowerCase()));
-        })
-        .sort((a, b) => {
-          const subjectA = currentGroupMetadata[a].subject.toLowerCase();
-          const subjectB = currentGroupMetadata[b].subject.toLowerCase();
-          return subjectA.localeCompare(subjectB);
-        })
-        .reduce((result, key) => {
-          result[key] = currentGroupMetadata[key];
-          return result;
-        }, {});
-
-      if (
-        filteredGroupMetadata &&
-        Object.keys(filteredGroupMetadata).length > 0 &&
-        (Object.keys(GroupMetadataCache).length === 0 || !deepEqual(filteredGroupMetadata, GroupMetadataCache))
-      ) {
-        GroupMetadataCache = filteredGroupMetadata;
-        SessionStats.totalGroups = Object.keys(GroupMetadataCache).length;
-        consoleLogColor("Lista de grupos atualizada", ConsoleColors.YELLOW);
-      }
+      isConnecting = true;
+      const newGroupMetadata = await sock.groupFetchAllParticipating();
+      await updateGroupMetadataCache(newGroupMetadata);
+      consoleLogColor(`${SessionStats.totalGroups} grupos carregados.`, ConsoleColors.YELLOW);
 
       if (Config.WA_VERSION != currentVersion) {
         Config.WA_VERSION = currentVersion;
@@ -156,6 +167,11 @@ async function runWhatsAppBot() {
         ConsoleColors.RESET,
         false
       );
+      isConnecting = false;
+      if (MessagePool.length > 0) {
+        consoleLogColor(`Enviando ${MessagePool.length} mensagens acumuladas...`, ConsoleColors.YELLOW);
+        sendMessagesFromPool();
+      }
     }
   });
 
@@ -172,13 +188,14 @@ async function runWhatsAppBot() {
       const sender = waMessage.key.remoteJid;
 
       if (!sender.endsWith("g.us")) {
-        if (Config.AUTHORIZED_NUMBERS.some((number) => sender.includes(number)) && !waMessage.key.fromMe) {
+        // if (Config.AUTHORIZED_NUMBERS.some((number) => sender.includes(number)) || waMessage.key.fromMe) {
+        if (Config.AUTHORIZED_NUMBERS.some((number) => sender.includes(number))) {
           const formattedNumber = sender
             .replace(TargetNumberSuffix, "")
             .replace(/^(\d+)(\d{2})(\d{4})(\d{4})$/, (_, countryCode, areaCode, part1, part2) => {
               return `(${areaCode}) ${part1}-${part2}`;
             });
-          const logMessage = `Mensagem de número autorizado: ${formattedNumber}`;
+          const logMessage = `Mensagem ${waMessage.key.id} de: ${formattedNumber}`;
           consoleLogColor(logMessage, ConsoleColors.YELLOW);
           const messageExists =
             MessagePool.length > 0 &&
@@ -213,9 +230,21 @@ async function runWhatsAppBot() {
       }
     }
 
-    if (MessagePool.length > 0 && !isSending) {
+    if (MessagePool.length > 0 && !isSending && !isConnecting) {
       sendMessagesFromPool();
     }
+  });
+
+  sock.ev.on("groups.upsert", async () => {
+    const newGroupMetadata = await sock.groupFetchAllParticipating();
+    await updateGroupMetadataCache(newGroupMetadata);
+    consoleLogColor(`Lista de grupos atualizada.`, ConsoleColors.YELLOW);
+  });
+
+  sock.ev.on("group-participants.update", async () => {
+    const newGroupMetadata = await sock.groupFetchAllParticipating();
+    await updateGroupMetadataCache(newGroupMetadata);
+    consoleLogColor(`Lista de grupos atualizada.`, ConsoleColors.YELLOW);
   });
 
   async function sendMessagesFromPool() {
@@ -235,6 +264,7 @@ async function runWhatsAppBot() {
       let currentSendMethod = Config.DEFAULT_SEND_METHOD;
       const waMessage = MessagePool.shift();
       const groupIds = Object.keys(GroupMetadataCache); // Get all group IDs
+      consoleLogColor(`Enviando mensagem ${waMessage.key.id} para ${groupIds.length} grupos...`, ConsoleColors.BRIGHT);
       for (let i = 0; i < groupIds.length && !forcedStop; i++) {
         // Use index to track remaining groups
         const chatId = groupIds[i];
@@ -243,9 +273,17 @@ async function runWhatsAppBot() {
           switch (currentSendMethod) {
             case SendMethods.FORWARD:
               try {
-                await sock.sendMessage(chat.id, { forward: waMessage });
+                const sendMessagePromise = sock.sendMessage(chat.id, { forward: waMessage });
+                const timeoutPromise = new Promise((_, reject) =>
+                  setTimeout(() => reject(new Error("Timeout")), 30000)
+                );
+                await Promise.race([sendMessagePromise, timeoutPromise]);
               } catch (error) {
-                consoleLogColor(`Erro ao enviar mensagem!`, ConsoleColors.RED);
+                if (error.message === "Timeout") {
+                  consoleLogColor(`Erro ao enviar mensagem ${waMessage.key.id} (tempo excedido)!`, ConsoleColors.RED);
+                } else {
+                  consoleLogColor(`Erro ao enviar mensagem!`, ConsoleColors.RED);
+                }
                 sock.ev.removeAllListeners();
                 await sock.ws.close();
                 MessagePool.unshift(waMessage);
@@ -302,7 +340,7 @@ async function runWhatsAppBot() {
                   : currentSendMethod === SendMethods.IMAGE
                   ? "Imagem enviada"
                   : "Mensagem enviada"
-              } para '${chat.subject}' (${groupIds.length - i - 1} grupos restantes)`,
+              } para '${chat.subject}' - ${groupIds.length - i - 1} grupos restantes`,
               ConsoleColors.RESET
             );
           }
