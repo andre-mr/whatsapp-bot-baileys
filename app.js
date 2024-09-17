@@ -171,26 +171,37 @@ async function runWhatsAppBot() {
 
       const sender = waMessage.key.remoteJid;
 
-      if (
-        !sender.endsWith("g.us") &&
-        Config.AUTHORIZED_NUMBERS.some((number) => sender.includes(number)) &&
-        !waMessage.key.fromMe
-      ) {
-        const formattedNumber = sender
-          .replace(TargetNumberSuffix, "")
-          .replace(/^(\d+)(\d{2})(\d{4})(\d{4})$/, (_, countryCode, areaCode, part1, part2) => {
-            return `(${areaCode}) ${part1}-${part2}`;
-          });
-        const logMessage = `Mensagem de número autorizado: ${formattedNumber}`;
-        consoleLogColor(logMessage, ConsoleColors.YELLOW);
-        const messageExists =
-          MessagePool.length > 0 &&
-          MessagePool.some(
-            (existingMessage) =>
-              existingMessage.key.id === waMessage.key.id && existingMessage.key.remoteJid === waMessage.key.remoteJid
-          );
-        if (!messageExists) {
-          MessagePool.push(waMessage);
+      if (!sender.endsWith("g.us")) {
+        if (Config.AUTHORIZED_NUMBERS.some((number) => sender.includes(number)) && !waMessage.key.fromMe) {
+          const formattedNumber = sender
+            .replace(TargetNumberSuffix, "")
+            .replace(/^(\d+)(\d{2})(\d{4})(\d{4})$/, (_, countryCode, areaCode, part1, part2) => {
+              return `(${areaCode}) ${part1}-${part2}`;
+            });
+          const logMessage = `Mensagem de número autorizado: ${formattedNumber}`;
+          consoleLogColor(logMessage, ConsoleColors.YELLOW);
+          const messageExists =
+            MessagePool.length > 0 &&
+            MessagePool.some(
+              (existingMessage) =>
+                existingMessage.key.id === waMessage.key.id && existingMessage.key.remoteJid === waMessage.key.remoteJid
+            );
+          if (!messageExists) {
+            MessagePool.push(waMessage);
+          }
+        } else if (waMessage.key.fromMe) {
+          if (!Config.OWN_NUMBER) {
+            const ownNumber = waMessage.key.remoteJid.replace("@s.whatsapp.net", "");
+            consoleLogColor(`Número do bot registrado: ${ownNumber}`, ConsoleColors.GREEN);
+            Config.OWN_NUMBER = ownNumber;
+            saveConfig();
+          }
+          const key = {
+            remoteJid: waMessage.key.remoteJid,
+            id: waMessage.key.id,
+            participant: waMessage?.participant || undefined, // participant if group only
+          };
+          await sock.readMessages([key]);
         }
       } else {
         const key = {
@@ -203,9 +214,7 @@ async function runWhatsAppBot() {
     }
 
     if (MessagePool.length > 0 && !isSending) {
-      sendMessagesFromPool().catch((err) => {
-        consoleLogColor(`Erro em sendMessagesFromPool:\n${err}`, ConsoleColors.RED);
-      });
+      sendMessagesFromPool();
     }
   });
 
@@ -221,18 +230,31 @@ async function runWhatsAppBot() {
     }
 
     isSending = true;
-    while (MessagePool.length > 0) {
+    let forcedStop = false;
+    while (MessagePool.length > 0 && !forcedStop) {
       let currentSendMethod = Config.DEFAULT_SEND_METHOD;
       const waMessage = MessagePool.shift();
       const groupIds = Object.keys(GroupMetadataCache); // Get all group IDs
-      for (let i = 0; i < groupIds.length; i++) {
+      for (let i = 0; i < groupIds.length && !forcedStop; i++) {
         // Use index to track remaining groups
         const chatId = groupIds[i];
         const chat = GroupMetadataCache[chatId];
         try {
           switch (currentSendMethod) {
             case SendMethods.FORWARD:
-              await sock.sendMessage(chat.id, { forward: waMessage });
+              try {
+                await sock.sendMessage(chat.id, { forward: waMessage });
+              } catch (error) {
+                consoleLogColor(`Erro ao enviar mensagem!`, ConsoleColors.RED);
+                sock.ev.removeAllListeners();
+                await sock.ws.close();
+                MessagePool.unshift(waMessage);
+                consoleLogColor("Mensagem devolvida para a fila", ConsoleColors.YELLOW);
+                consoleLogColor("Forçando reconexão em 5 segundos...", ConsoleColors.YELLOW);
+                await delay(5);
+                runWhatsAppBot(); // Call the function to restart the bot
+                forcedStop = true;
+              }
               break;
 
             case SendMethods.IMAGE:
@@ -272,16 +294,18 @@ async function runWhatsAppBot() {
               await sock.sendMessage(chat.id, { text: waMessage.message.extendedTextMessage.text });
               break;
           }
-          consoleLogColor(
-            `${
-              currentSendMethod === SendMethods.FORWARD
-                ? "Mensagem encaminhada"
-                : currentSendMethod === SendMethods.IMAGE
-                ? "Imagem enviada"
-                : "Mensagem enviada"
-            } para '${chat.subject}' (${groupIds.length - i - 1} grupos restantes)`,
-            ConsoleColors.RESET
-          );
+          if (!forcedStop) {
+            consoleLogColor(
+              `${
+                currentSendMethod === SendMethods.FORWARD
+                  ? "Mensagem encaminhada"
+                  : currentSendMethod === SendMethods.IMAGE
+                  ? "Imagem enviada"
+                  : "Mensagem enviada"
+              } para '${chat.subject}' (${groupIds.length - i - 1} grupos restantes)`,
+              ConsoleColors.RESET
+            );
+          }
         } catch (error) {
           consoleLogColor(`Erro ao enviar mensagem para o grupo ${chat.subject}: ${error}`, ConsoleColors.RED);
           MessagePool.unshift(waMessage); // Put the message back at the beginning
@@ -289,11 +313,13 @@ async function runWhatsAppBot() {
         }
 
         // Check if there's a next group before pausing
-        if (chatId !== groupIds[groupIds.length - 1]) {
+        if (!forcedStop && chatId !== groupIds[groupIds.length - 1]) {
           const randomDelay = Config.DELAY_BETWEEN_GROUPS + (Math.random() * 2 - 1);
           await delay(randomDelay);
         }
       }
+
+      if (forcedStop) break;
 
       const key = {
         remoteJid: waMessage.key.remoteJid,
@@ -313,12 +339,14 @@ async function runWhatsAppBot() {
     }
 
     isSending = false;
-    consoleLogColor("", ConsoleColors.RESET, false);
-    consoleLogColor("✅ Todas as mensagens foram enviadas.\n", ConsoleColors.GREEN);
+    if (forcedStop) {
+      return false;
+    } else {
+      consoleLogColor("", ConsoleColors.RESET, false);
+      consoleLogColor("✅ Todas as mensagens foram enviadas.\n", ConsoleColors.GREEN);
+    }
   }
 }
 
 setupInputListener();
-runWhatsAppBot().catch((err) => {
-  consoleLogColor(`Erro na primeira execução de runWhatsAppBot:\n${err}`, ConsoleColors.RED);
-});
+runWhatsAppBot();

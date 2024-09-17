@@ -52,8 +52,7 @@ async function handleMenuOption(option, rl) {
       return false;
 
     case "4":
-      // await modifyArrayOption("AUTHORIZED_NUMBERS", rl);
-      await modifyNumberOptions(rl);
+      await modifyArrayOption("AUTHORIZED_NUMBERS", rl);
       return false;
 
     case "5":
@@ -173,63 +172,6 @@ function modifyDelayBetweenMessages(rl) {
         Config.DELAY_BETWEEN_MESSAGES = parsedDelay;
         saveConfig();
         consoleLogColor(`Pausa entre mensagens atualizada para ${parsedDelay} segundos.`, ConsoleColors.GREEN, false);
-      }
-      resolve();
-    });
-  });
-}
-
-async function modifyNumberOptions(rl) {
-  const subMenuOptions = [
-    "1. Número do Bot",
-    "2. Números autorizados a enviar mensagens",
-    "0. Voltar ao menu principal",
-  ];
-
-  consoleLogColor(subMenuOptions.join("\n"), ConsoleColors.BRIGHT, false);
-
-  const choice = await askQuestion(rl, "\nEscolha uma opção:");
-  consoleLogColor(
-    "--------------------------------------------------------------------------------",
-    ConsoleColors.RESET,
-    false
-  );
-
-  switch (choice) {
-    case "1":
-      await modifyBotNumber(rl); // Modify Bot Number
-      break;
-    case "2":
-      await modifyArrayOption("AUTHORIZED_NUMBERS", rl); // Modify Authorized Numbers
-      break;
-    case "0":
-      return; // Go back to main menu
-    default:
-      consoleLogColor("Opção inválida.", ConsoleColors.RED, false);
-  }
-}
-
-function modifyBotNumber(rl) {
-  consoleLogColor(`Número do bot atual: ${Config.OWN_NUMBER}\n`, ConsoleColors.CYAN, false);
-  return new Promise((resolve) => {
-    rl.question("Digite o número do Bot (Ex: 553499995555): ", (newNumber) => {
-      consoleLogColor(
-        "--------------------------------------------------------------------------------",
-        ConsoleColors.RESET,
-        false
-      );
-      if (
-        newNumber &&
-        newNumber.trim() !== "" &&
-        /^\d+$/.test(newNumber) &&
-        newNumber.length >= 11 &&
-        newNumber.length <= 12
-      ) {
-        Config.OWN_NUMBER = newNumber.trim(); // Save the bot number
-        saveConfig();
-        consoleLogColor(`Número do Bot atualizado para: ${Config.OWN_NUMBER}`, ConsoleColors.GREEN, false);
-      } else {
-        consoleLogColor("Valor inválido. Nenhum número foi salvo.", ConsoleColors.RED, false);
       }
       resolve();
     });

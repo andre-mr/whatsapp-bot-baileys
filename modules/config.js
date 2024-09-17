@@ -19,7 +19,10 @@ export function loadConfig() {
     const data = fs.readFileSync(configPath, "utf8");
     Config = JSON.parse(data);
     consoleLogColor("Configurações carregadas com sucesso\n", ConsoleColors.GREEN);
-    const configSummary = `Método de Envio Padrão: ${
+    const configSummary = `Número do bot: ${Config.OWN_NUMBER}
+Versão do WhatsApp: ${Config.WA_VERSION.join(".")}
+
+Método de Envio Padrão: ${
       Config.DEFAULT_SEND_METHOD === SendMethods.FORWARD
         ? "Encaminhar"
         : Config.DEFAULT_SEND_METHOD === SendMethods.TEXT
@@ -32,8 +35,6 @@ Pausa entre Grupos: ${Config.DELAY_BETWEEN_GROUPS} segundos
 Pausa entre Mensagens: ${Config.DELAY_BETWEEN_MESSAGES} segundos
 Números Autorizados: ${Config.AUTHORIZED_NUMBERS.length}
 Palavras-chave para grupos: ${Config.GROUP_NAME_KEYWORDS.length}
-Número do bot: ${Config.OWN_NUMBER}
-Versão do WhatsApp: ${Config.WA_VERSION.join(".")}
 `;
     consoleLogColor(configSummary, ConsoleColors.CYAN, false);
     return Config;
@@ -108,9 +109,7 @@ Pausa entre grupos: ${Config.DELAY_BETWEEN_GROUPS} segundos
 Pausa entre mensagens: ${Config.DELAY_BETWEEN_MESSAGES} segundos
 Números autorizados: ${Config.AUTHORIZED_NUMBERS.length}
 Palavras-chave para grupos: ${Config.GROUP_NAME_KEYWORDS.length}
-Grupos carregados para envio: ${SessionStats.totalGroups}
-Número do bot: ${Config.OWN_NUMBER}
-Versão do WhatsApp: ${Config.WA_VERSION.join(".")}`;
+Grupos carregados para envio: ${SessionStats.totalGroups}`;
 
   consoleLogColor(configFormatted, ConsoleColors.CYAN, false);
 }
