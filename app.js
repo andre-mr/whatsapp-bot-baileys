@@ -105,6 +105,65 @@ async function updateGroupMetadataCache(newGroupMetadata) {
   }
 }
 
+function convertGroupsArrayToObject(groupsArray) {
+  const groupsObject = {};
+
+  groupsArray.forEach((group) => {
+    const { id, ...rest } = group; // Remove id
+    groupsObject[id] = rest; // Store all without id
+  });
+
+  return groupsObject;
+}
+
+function handleGroupParticipantsUpdate(groupUpdateData) {
+  const groupId = groupUpdateData.id;
+  const group = GroupMetadataCache[groupId];
+
+  if (!group) {
+    console.error(`Grupo com id ${groupId} não encontrado no cache.`);
+    return;
+  }
+
+  switch (groupUpdateData.action) {
+    case "remove":
+      group.participants = group.participants.filter(
+        (participant) => !groupUpdateData.participants.includes(participant.id)
+      );
+      break;
+
+    case "add":
+      groupUpdateData.participants.forEach((participantId) => {
+        group.participants.push({ id: participantId, admin: null });
+      });
+      break;
+
+    case "promote":
+      group.participants.forEach((participant) => {
+        if (groupUpdateData.participants.includes(participant.id)) {
+          participant.admin = "admin";
+        }
+      });
+      break;
+
+    case "demote":
+      group.participants.forEach((participant) => {
+        if (groupUpdateData.participants.includes(participant.id)) {
+          participant.admin = null;
+        }
+      });
+      break;
+
+    case "modify":
+      // Ignore so far.
+      break;
+
+    default:
+      console.error(`Ação desconhecida: ${groupUpdateData.action}`);
+      break;
+  }
+}
+
 // Main function that controls the WhatsApp connection
 async function runWhatsAppBot() {
   consoleLogColor("Iniciando a aplicação...", ConsoleColors.YELLOW, true);
@@ -137,8 +196,9 @@ async function runWhatsAppBot() {
           ConsoleColors.YELLOW
         );
         try {
-          await delay(1);
-          sock.ev.removeAllListeners();
+          sock?.ev?.removeAllListeners();
+          await sock?.ws?.close();
+          await delay(5);
           await runWhatsAppBot();
         } catch (err) {
           consoleLogColor(`Erro durante nova chamada de runWhatsAppBot:\n${err}`, ConsoleColors.RED);
@@ -235,16 +295,24 @@ async function runWhatsAppBot() {
     }
   });
 
-  sock.ev.on("groups.upsert", async () => {
-    const newGroupMetadata = await sock.groupFetchAllParticipating();
-    await updateGroupMetadataCache(newGroupMetadata);
-    consoleLogColor(`Lista de grupos atualizada.`, ConsoleColors.YELLOW);
+  sock.ev.on("groups.update", async (groupUpdateData) => {
+    if (groupUpdateData?.length > 0) {
+      const group = GroupMetadataCache[groupUpdateData[0].id];
+      if (group) {
+        group.subject = groupUpdateData.subject;
+      }
+    }
   });
 
-  sock.ev.on("group-participants.update", async () => {
-    const newGroupMetadata = await sock.groupFetchAllParticipating();
-    await updateGroupMetadataCache(newGroupMetadata);
-    consoleLogColor(`Lista de grupos atualizada.`, ConsoleColors.YELLOW);
+  sock.ev.on("groups.upsert", async (groupUpsertGroupMetadata) => {
+    const groupMetadataObj = convertGroupsArrayToObject(groupUpsertGroupMetadata);
+    if (groupMetadataObj) {
+      GroupMetadataCache = groupMetadataObj;
+    }
+  });
+
+  sock.ev.on("group-participants.update", async (groupUpdateData) => {
+    handleGroupParticipantsUpdate(groupUpdateData);
   });
 
   async function sendMessagesFromPool() {
@@ -289,8 +357,8 @@ async function runWhatsAppBot() {
                 MessagePool.unshift(waMessage);
                 consoleLogColor("Mensagem devolvida para a fila", ConsoleColors.YELLOW);
                 consoleLogColor("Forçando reconexão em 5 segundos...", ConsoleColors.YELLOW);
-                await delay(5);
-                runWhatsAppBot(); // Call the function to restart the bot
+                // await delay(5);
+                // runWhatsAppBot(); // Call the function to restart the bot
                 forcedStop = true;
               }
               break;
