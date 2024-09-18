@@ -356,9 +356,6 @@ async function runWhatsAppBot() {
                 await sock.ws.close();
                 MessagePool.unshift(waMessage);
                 consoleLogColor("Mensagem devolvida para a fila", ConsoleColors.YELLOW);
-                consoleLogColor("Forçando reconexão em 5 segundos...", ConsoleColors.YELLOW);
-                // await delay(5);
-                // runWhatsAppBot(); // Call the function to restart the bot
                 forcedStop = true;
               }
               break;
