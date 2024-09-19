@@ -1,4 +1,5 @@
 /node_modules
 /auth
 /dev
-config.json
+/modules/config.json
+/modules/errors.log
