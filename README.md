@@ -2,16 +2,16 @@
 
 ## 📝 Descrição
 
-Este projeto é uma aplicação Node.js que permite o envio em massa de mensagens para grupos do WhatsApp. Ele oferece uma interface de linha de comando para configuração e operação, tornando-o uma ferramenta poderosa para comunicação em massa e distribuição de conteúdo.
+Este projeto é uma aplicação Node.js que permite o envio automatizado de mensagens para grupos do WhatsApp. Ele oferece uma interface de linha de comando para configuração e operação, tornando-o uma ferramenta poderosa para comunicação em massa e distribuição de conteúdo.
 
 ## 🌟 Funcionalidades
 
-- 📤 Envio em massa de mensagens para grupos do WhatsApp
+- 📤 Envio automatizado de mensagens para grupos do WhatsApp
 - 🔐 Autenticação de números e grupos autorizados
 - 🔄 Múltiplos métodos de envio (encaminhar, texto, imagem)
 - ⏱️ Configuração de pausas entre mensagens e grupos
 - 🔍 Filtragem de grupos por palavras-chave
-- 🛠️ Interface de configuração interativa
+- 🛠️ Interface de configuração interativa no terminal
 
 ## 🚀 Como Começar
 
@@ -52,7 +52,11 @@ Após iniciar a aplicação, você poderá a qualquer momento digitar "menu" par
 
 Para enviar mensagens, basta enviar uma mensagem de número autorizado para o número do bot e a aplicação irá encaminha-la para os grupos autorizados.
 
-Para adicionar um grupo na lista de grupos autorizados, basta enviar qualquer mensagem do bot ou de um número autorizado para o grupo, e o bot irá detectar e adicionar.
+Com base nas palavras-chave os grupos autorizados serão carregados automaticamente no início da aplicação e atualizados após cada modificação nos mesmos.
+
+O bot enviará uma mensagem de relatório após o envio de cada lote de mensagens.
+
+Ao enviar a mensagem "status" ou "?" para o bot, ele responderá se está enviando, quantas mensagens faltam enviar, ou se está aguardando novas mensagens. Adicionalmente enviará a data e hora que a aplicação foi iniciada e quantas mensagens já foram enviadas desde então.
 
 ## ⚠️ Aviso Legal
 

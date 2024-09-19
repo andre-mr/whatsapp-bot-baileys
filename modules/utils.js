@@ -1,6 +1,9 @@
 import { ConsoleColors } from "./constants.js";
 
-export function consoleLogColor(text, color = ConsoleColors.RESET, timestamp = true) {
+let isMenuOpen = false; // Global variable to track menu state
+
+export function consoleLogColor(text, color = ConsoleColors.RESET, timestamp = true, force = false) {
+  if (isMenuOpen && !force) return; // Skip logging if menu is open unless forced
   if (timestamp && text) {
     const now = new Date();
     const timestamp = now.toLocaleString("pt-BR", {
@@ -34,7 +37,7 @@ export async function fetchWhatsAppVersion() {
       throw new Error("WhatsApp version not found in the HTML");
     }
   } catch (error) {
-    consoleLogColor("Error fetching WhatsApp version!", ConsoleColors.RED);
+    consoleLogColor("Erro ao verificar versão atual do WhatsApp!", ConsoleColors.RED);
     throw error;
   }
 }
@@ -59,4 +62,9 @@ export function deepEqual(obj1, obj2) {
   }
 
   return true; // All keys and values are equal
+}
+
+// Function to set menu state
+export function setMenuState(state) {
+  isMenuOpen = state;
 }

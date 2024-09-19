@@ -18,7 +18,7 @@ export function loadConfig() {
     const configPath = path.join(__dirname, "./config.json");
     const data = fs.readFileSync(configPath, "utf8");
     Config = JSON.parse(data);
-    consoleLogColor("Configurações carregadas com sucesso\n", ConsoleColors.GREEN);
+    consoleLogColor("Configurações carregadas com sucesso.\n", ConsoleColors.GREEN);
     const configSummary = `Número do bot: ${Config.OWN_NUMBER}
 Versão do WhatsApp: ${Config.WA_VERSION.join(".")}
 
@@ -111,7 +111,7 @@ Números autorizados: ${Config.AUTHORIZED_NUMBERS.length}
 Palavras-chave para grupos: ${Config.GROUP_NAME_KEYWORDS.length}
 Grupos carregados para envio: ${SessionStats.totalGroups}`;
 
-  consoleLogColor(configFormatted, ConsoleColors.CYAN, false);
+  consoleLogColor(configFormatted, ConsoleColors.CYAN, false, true);
 }
 
 loadConfig();
