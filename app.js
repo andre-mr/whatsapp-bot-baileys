@@ -67,7 +67,7 @@ async function handleUnknownError() {
     const currentDate = new Date();
     const timeDifference = (currentDate - firstErrorDate) / 1000;
 
-    if (timeDifference > 30) {
+    if (timeDifference < 60) {
       consoleLogColor(
         `${unknownErrorDates.length} erros em ${Math.floor(
           timeDifference
