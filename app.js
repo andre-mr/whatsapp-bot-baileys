@@ -369,7 +369,7 @@ async function runWhatsAppBot() {
             });
 
           const messageContent = waMessage.message?.conversation || waMessage?.message?.extendedTextMessage?.text;
-          if (/^(status|\?)$/i.test(messageContent.trim())) {
+          if (messageContent && /^(status|\?)$/i.test(messageContent.trim())) {
             consoleLogColor(`Status solicitado por: ${formattedNumber}`, ConsoleColors.YELLOW);
             const currentStatus = isSending
               ? MessagePool.length === 1
@@ -483,7 +483,9 @@ async function runWhatsAppBot() {
             default:
               await handleSendMethod(() => {
                 return sock
-                  .sendMessage(chat.id, { text: waMessage.message.extendedTextMessage.text })
+                  .sendMessage(chat.id, {
+                    text: waMessage?.message?.extendedTextMessage?.text || waMessage.message?.conversation,
+                  })
                   .catch((error) => {
                     throw new Error("Erro ao enviar mensagem!");
                   });
@@ -506,7 +508,7 @@ async function runWhatsAppBot() {
         }
 
         async function handleImageSend(waMessage, chatId, sock) {
-          const text = waMessage.message?.extendedTextMessage?.text;
+          const text = waMessage?.message?.extendedTextMessage?.text || waMessage.message?.conversation;
           const urlMatch = text?.match(/https?:\/\/[^\s]+/);
 
           if (!urlMatch) {
