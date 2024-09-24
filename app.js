@@ -24,7 +24,6 @@ let MessagePool = [];
 let lastGroupIndex = 0;
 let GroupMetadataCache = {};
 let isSending = false;
-let forcedStop = false;
 let sock;
 
 process.on("uncaughtException", async (error) => {
@@ -431,7 +430,6 @@ async function runWhatsAppBot() {
     }
 
     isSending = true;
-    forcedStop = false;
     let messagesSentInCurrentBatch = 0;
 
     while (MessagePool.length > 0) {
@@ -541,14 +539,15 @@ async function runWhatsAppBot() {
               consoleLogColor(error?.message || "Falha no envio!", ConsoleColors.RED);
             }
             MessagePool.unshift(waMessage);
-            lastGroupIndex = i;
             consoleLogColor(`Mensagem ${waMessage.key.id} devolvida para a fila.`, ConsoleColors.BRIGHT);
-            forcedStop = true;
             isSending = false;
           }
         }
 
-        if (forcedStop) {
+        if (!isSending) {
+          if (i > 0 && i < groupIds.length) {
+            lastGroupIndex = i;
+          }
           return false;
         }
 
