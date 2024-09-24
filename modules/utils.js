@@ -38,7 +38,6 @@ export async function fetchWhatsAppVersion() {
     }
   } catch (error) {
     consoleLogColor("Erro ao verificar versão atual do WhatsApp!", ConsoleColors.RED);
-    throw error;
   }
 }
 

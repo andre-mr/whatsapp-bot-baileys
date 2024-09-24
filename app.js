@@ -21,25 +21,22 @@ process.stdout.write(`\x1b]2;${appDirectoryName} - ${Config.OWN_NUMBER}\x07`);
 let rl;
 let reconnectionAttempts = Config.MAX_RECONNECTION_ATTEMPTS || 1;
 let MessagePool = [];
+let lastGroupIndex = 0;
 let GroupMetadataCache = {};
-let isConnecting = false;
 let isSending = false;
 let forcedStop = false;
 let sock;
-let unknownErrorDates = [];
 
 process.on("uncaughtException", async (error) => {
   const errorMessage = error?.message || "desconhecido";
   consoleLogColor(`Erro inesperado: ${errorMessage}`, ConsoleColors.RED);
-  await handleUnknownError();
   handleDisconnect();
   saveErrorLog(errorMessage);
 });
 
-process.on("unhandledRejection", async (reason, promise) => {
+process.on("unhandledRejection", async (reason) => {
   const reasonMessage = reason?.message || "desconhecido";
-  consoleLogColor(`Rejeição não tratada: ${reasonMessage}`, ConsoleColors.RED);
-  await handleUnknownError();
+  consoleLogColor(`Erro não tratado: ${reasonMessage}`, ConsoleColors.RED);
   handleDisconnect();
   saveErrorLog(reasonMessage);
 });
@@ -61,29 +58,8 @@ async function saveErrorLog(logMessage) {
   }
 }
 
-async function handleUnknownError() {
-  if (unknownErrorDates.length >= Config.MAX_RECONNECTION_ATTEMPTS) {
-    const firstErrorDate = new Date(unknownErrorDates[0]);
-    const currentDate = new Date();
-    const timeDifference = (currentDate - firstErrorDate) / 1000;
-
-    if (timeDifference < 60) {
-      consoleLogColor(
-        `${unknownErrorDates.length} erros em ${Math.floor(
-          timeDifference
-        )} segundos! Verifique o arquivo errors.log ou tente mais tarde. Encerrando...`,
-        ConsoleColors.RED
-      );
-      process.exit(1);
-    } else {
-      unknownErrorDates.shift();
-    }
-  }
-  unknownErrorDates.push(new Date().toISOString());
-}
-
 function handleDisconnect(reconnectMessage) {
-  if (sock) {
+  if (sock && sock.ws.isOpen) {
     sock.end(new Error(reconnectMessage || "Fechamento manual"));
   }
 }
@@ -92,8 +68,8 @@ const { state, saveCreds } = await useMultiFileAuthState("auth");
 const currentVersion = await getWhatsAppVersion();
 
 async function getWhatsAppVersion() {
-  const latestVersionBaileys = await fetchLatestWaWebVersion();
   const latestVersionCustom = await fetchWhatsAppVersion();
+  const latestVersionBaileys = await fetchLatestWaWebVersion();
   const configVersion = Config.WA_VERSION || [];
   const compareVersions = (v1, v2, v3) => {
     for (let i = 0; i < 3; i++) {
@@ -103,7 +79,7 @@ async function getWhatsAppVersion() {
     }
     return v1; // If all versions are equal, return the Config version
   };
-  const currentVersion = compareVersions(configVersion, latestVersionBaileys.version || [], latestVersionCustom);
+  const currentVersion = compareVersions(configVersion, latestVersionBaileys?.version || [], latestVersionCustom || []);
 
   if (!configVersion.every((v, i) => v === currentVersion[i])) {
     consoleLogColor(`Versão do WhatsApp: ${currentVersion.join(".")}`, ConsoleColors.CYAN, false);
@@ -278,9 +254,8 @@ async function sendReportMessage(sock, recipientNumbers, content, quotedMessage)
 
 // Main function that controls the WhatsApp connection
 async function runWhatsAppBot() {
-  consoleLogColor("Iniciando a aplicação...", ConsoleColors.YELLOW, true);
+  consoleLogColor("Iniciando a aplicação...", ConsoleColors.BRIGHT, true);
 
-  isSending = false;
   sock = makeWASocket({
     auth: state,
     version: currentVersion,
@@ -297,35 +272,40 @@ async function runWhatsAppBot() {
     if (connection === "close") {
       consoleLogColor(`Conexão fechada: ${lastDisconnect.error?.message}`, ConsoleColors.RED);
 
-      const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut || forcedStop;
+      const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut;
 
-      if (shouldReconnect && reconnectionAttempts > 0) {
-        reconnectionAttempts--;
-        consoleLogColor(
-          `Tentando reconectar (tentativa ${Config.MAX_RECONNECTION_ATTEMPTS - reconnectionAttempts} de ${
-            Config.MAX_RECONNECTION_ATTEMPTS
-          })`,
-          ConsoleColors.YELLOW
-        );
+      if (shouldReconnect) {
+        if (lastDisconnect.error?.message?.includes("ENOTFOUND")) {
+          consoleLogColor(`⏳ Conexão com o WhatsApp indisponível. Aguardando 60 segundos...`, ConsoleColors.YELLOW);
+          await delay(60);
+        } else {
+          if (reconnectionAttempts > 0) {
+            reconnectionAttempts--;
+            consoleLogColor(
+              `Tentando reconectar (tentativa ${Config.MAX_RECONNECTION_ATTEMPTS - reconnectionAttempts} de ${
+                Config.MAX_RECONNECTION_ATTEMPTS
+              })`,
+              ConsoleColors.YELLOW
+            );
+            await delay(5);
+          } else {
+            consoleLogColor("Máximo de tentativas de reconexão atingido!", ConsoleColors.RED);
+            consoleLogColor("Encerrando a aplicação...", ConsoleColors.YELLOW);
+            sock.ev.removeAllListeners();
+            rl.close();
+            handleDisconnect();
+            process.exit(0);
+          }
+        }
+
         try {
-          await delay(5);
-          sock.ev.removeAllListeners();
-          handleDisconnect();
           await runWhatsAppBot();
         } catch (err) {
           consoleLogColor(`Erro durante reconexão:\n${err}`, ConsoleColors.RED);
         }
         return;
-      } else {
-        consoleLogColor("Máximo de tentativas de reconexão atingido!", ConsoleColors.RED);
-        consoleLogColor("Encerrando a aplicação...", ConsoleColors.YELLOW);
-        sock.ev.removeAllListeners();
-        rl.close();
-        handleDisconnect();
-        process.exit(0);
       }
     } else if (connection === "open") {
-      isConnecting = true;
       const newGroupMetadata = await sock.groupFetchAllParticipating();
       await createGroupMetadataCache(newGroupMetadata);
       consoleLogColor(`${SessionStats.totalGroups} grupos carregados.`, ConsoleColors.YELLOW);
@@ -341,7 +321,6 @@ async function runWhatsAppBot() {
         ConsoleColors.RESET,
         false
       );
-      isConnecting = false;
       if (MessagePool.length > 0) {
         const messageCountText = MessagePool.length === 1 ? "mensagem acumulada" : "mensagens acumuladas";
         consoleLogColor(`Enviando ${MessagePool.length} ${messageCountText}...`, ConsoleColors.YELLOW);
@@ -373,8 +352,8 @@ async function runWhatsAppBot() {
             consoleLogColor(`Status solicitado por: ${formattedNumber}`, ConsoleColors.YELLOW);
             const currentStatus = isSending
               ? MessagePool.length === 1
-                ? `🔄 Enviando mensagens!\n1 restante na fila.`
-                : `🔄 Enviando mensagens!\n${MessagePool.length} restantes na fila.`
+                ? `🔄 Enviando mensagem!\n1 restante na fila.`
+                : `🔄 Enviando mensagem!\n${MessagePool.length} restantes na fila.`
               : "🟢 Online!\nAguardando novas mensagens.";
             const currentStatistics = `${
               SessionStats.totalMessagesSent === 1
@@ -420,7 +399,7 @@ async function runWhatsAppBot() {
       }
     }
 
-    if (MessagePool.length > 0 && !isSending && !isConnecting) {
+    if (MessagePool.length > 0 && !isSending) {
       sendMessagesFromPool();
     }
   });
@@ -459,8 +438,18 @@ async function runWhatsAppBot() {
       let currentSendMethod = Config.DEFAULT_SEND_METHOD;
       const waMessage = MessagePool.shift();
       const groupIds = Object.keys(GroupMetadataCache);
-      consoleLogColor(`Enviando mensagem ${waMessage.key.id} para ${groupIds.length} grupos...`, ConsoleColors.BRIGHT);
-      for (let i = 0; i < groupIds.length; i++) {
+      if (lastGroupIndex > 0) {
+        consoleLogColor(
+          `Enviando mensagem ${waMessage.key.id} para ${groupIds.length - lastGroupIndex} grupos restantes...`,
+          ConsoleColors.BRIGHT
+        );
+      } else {
+        consoleLogColor(
+          `Enviando mensagem ${waMessage.key.id} para ${groupIds.length} grupos...`,
+          ConsoleColors.BRIGHT
+        );
+      }
+      for (let i = lastGroupIndex; i < groupIds.length; i++) {
         // Use index to track remaining groups
         const chatId = groupIds[i];
         const chat = GroupMetadataCache[chatId];
@@ -469,9 +458,7 @@ async function runWhatsAppBot() {
           switch (currentSendMethod) {
             case SendMethods.FORWARD:
               await handleSendMethod(() => {
-                return sock.sendMessage(chat.id, { forward: waMessage }).catch((error) => {
-                  throw new Error("Erro ao encaminhar mensagem!");
-                });
+                return sock.sendMessage(chat.id, { forward: waMessage });
               });
 
               break;
@@ -482,28 +469,27 @@ async function runWhatsAppBot() {
 
             default:
               await handleSendMethod(() => {
-                return sock
-                  .sendMessage(chat.id, {
-                    text: waMessage?.message?.extendedTextMessage?.text || waMessage.message?.conversation,
-                  })
-                  .catch((error) => {
-                    throw new Error("Erro ao enviar mensagem!");
-                  });
+                return sock.sendMessage(chat.id, {
+                  text: waMessage?.message?.extendedTextMessage?.text || waMessage.message?.conversation,
+                });
               });
               break;
           }
         } catch (error) {
-          handleError(error, waMessage, sock);
+          await handleError(error, waMessage);
         }
 
         async function handleSendMethod(sendFunction) {
-          const sendPromise = sendFunction();
-          const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 30000));
-
           try {
-            await Promise.race([sendPromise, timeoutPromise]);
+            if (sock.ws.isOpen) {
+              const sendPromise = sendFunction();
+              const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 30000));
+              await Promise.race([sendPromise, timeoutPromise]);
+            } else {
+              throw new Error("Sem conexão ao tentar enviar.");
+            }
           } catch (error) {
-            throw new Error(error?.message);
+            throw error;
           }
         }
 
@@ -542,27 +528,23 @@ async function runWhatsAppBot() {
           });
         }
 
-        async function handleError(error, waMessage, sock) {
+        async function handleError(error, waMessage) {
           if (error?.message.includes("imagem:")) {
             consoleLogColor(error.message, ConsoleColors.RED);
             consoleLogColor("Alterando método para encaminhamento.", ConsoleColors.YELLOW);
             currentSendMethod = SendMethods.FORWARD;
-            await delay(1);
+            await delay(5);
           } else {
-            if (error?.message == "Timeout") {
-              consoleLogColor(`Erro ao enviar mensagem: ${waMessage.key.id} tempo excedido!`, ConsoleColors.RED);
+            if (error?.message == "Timeout" || error?.message == "Timed Out") {
+              consoleLogColor(`Falha no envio da mensagem ${waMessage.key.id} - tempo excedido!`, ConsoleColors.RED);
             } else {
-              consoleLogColor(error?.message || "Erro ao enviar mensagem!", ConsoleColors.RED);
+              consoleLogColor(error?.message || "Falha no envio!", ConsoleColors.RED);
             }
             MessagePool.unshift(waMessage);
+            lastGroupIndex = i;
             consoleLogColor(`Mensagem ${waMessage.key.id} devolvida para a fila.`, ConsoleColors.BRIGHT);
             forcedStop = true;
             isSending = false;
-            try {
-              handleDisconnect();
-            } catch (error) {
-              consoleLogColor(error, ConsoleColors.RED);
-            }
           }
         }
 
@@ -588,6 +570,8 @@ async function runWhatsAppBot() {
         }
       }
 
+      lastGroupIndex = 0;
+
       const key = {
         remoteJid: waMessage.key.remoteJid,
         id: waMessage.key.id,
@@ -605,7 +589,7 @@ async function runWhatsAppBot() {
             : Config.DELAY_BETWEEN_MESSAGES +
               (Math.random() * Config.DELAY_BETWEEN_MESSAGES * 0.2 * 2 - Config.DELAY_BETWEEN_MESSAGES * 0.2);
         consoleLogColor("", ConsoleColors.RESET, false);
-        consoleLogColor(`📩 Mensagens restantes: ${MessagePool.length}`, ConsoleColors.BRIGHT);
+        consoleLogColor(`📩 Mensagens restantes: ${MessagePool.length}`, ConsoleColors.RESET);
         consoleLogColor(`⏳ Pausa de ${randomDelay.toFixed(2)} segundos entre mensagens...\n`, ConsoleColors.RESET);
         await delay(randomDelay);
       }
