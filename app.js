@@ -323,7 +323,9 @@ async function runWhatsAppBot() {
       if (MessagePool.length > 0) {
         const messageCountText = MessagePool.length === 1 ? "mensagem acumulada" : "mensagens acumuladas";
         consoleLogColor(`Enviando ${MessagePool.length} ${messageCountText}...`, ConsoleColors.YELLOW);
-        sendMessagesFromPool();
+        if (!isSending) {
+          sendMessagesFromPool();
+        }
       }
     }
   });
