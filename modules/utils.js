@@ -4,6 +4,8 @@ let isMenuOpen = false; // Global variable to track menu state
 
 export function consoleLogColor(text, color = ConsoleColors.RESET, timestamp = true, force = false) {
   if (isMenuOpen && !force) return; // Skip logging if menu is open unless forced
+
+  let formattedText = text;
   if (timestamp && text) {
     const now = new Date();
     const timestamp = now.toLocaleString("pt-BR", {
@@ -15,10 +17,22 @@ export function consoleLogColor(text, color = ConsoleColors.RESET, timestamp = t
       second: "2-digit",
       hour12: false,
     });
-    const formattedText = `[${timestamp}] ${text}`;
-    console.log(`${color}${formattedText}${ConsoleColors.RESET}`);
-  } else {
-    console.log(`${color}${text}${ConsoleColors.RESET}`);
+    formattedText = `[${timestamp}] ${text}`;
+  }
+  switch (color) {
+    case ConsoleColors.RED:
+      console.error(`${color}${formattedText}${ConsoleColors.RESET}`);
+      break;
+    case ConsoleColors.YELLOW:
+      console.warn(`${color}${formattedText}${ConsoleColors.RESET}`);
+      break;
+    case ConsoleColors.CYAN:
+    case ConsoleColors.GREEN:
+      console.info(`${color}${formattedText}${ConsoleColors.RESET}`);
+      break;
+    default:
+      console.log(`${color}${formattedText}${ConsoleColors.RESET}`);
+      break;
   }
 }
 

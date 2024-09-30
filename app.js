@@ -82,7 +82,6 @@ async function getWhatsAppVersion() {
 
   if (!configVersion.every((v, i) => v === currentVersion[i])) {
     consoleLogColor(`Versão do WhatsApp: ${currentVersion.join(".")}`, ConsoleColors.CYAN, false);
-    consoleLogColor("Versão do WhatsApp atualizada. Salvando nova configuração...", ConsoleColors.YELLOW);
   }
   return currentVersion;
 }
@@ -126,7 +125,7 @@ async function createGroupMetadataCache(newGroupMetadata) {
   const filteredGroupMetadata = Object.keys(newGroupMetadata)
     .filter((key) => {
       const subject = newGroupMetadata[key].subject.toLowerCase();
-      return Config.GROUP_NAME_KEYWORDS.some((keyword) => subject.includes(keyword.toLowerCase()));
+      return Config.GROUP_NAME_KEYWORDS.some((keyword) => subject?.includes(keyword.toLowerCase()));
     })
     .sort((a, b) => {
       const subjectA = newGroupMetadata[a].subject.toLowerCase();
@@ -160,7 +159,7 @@ function convertGroupsArrayToObject(groupsArray) {
 }
 
 function handleGroupParticipantsUpdate(groupUpdateData) {
-  const groupId = groupUpdateData.id;
+  const groupId = groupUpdateData?.id;
   const group = GroupMetadataCache[groupId];
 
   if (!group) {
@@ -171,7 +170,7 @@ function handleGroupParticipantsUpdate(groupUpdateData) {
   switch (groupUpdateData.action) {
     case "remove":
       group.participants = group.participants.filter(
-        (participant) => !groupUpdateData.participants.includes(participant.id)
+        (participant) => !groupUpdateData.participants?.includes(participant.id)
       );
       break;
 
@@ -183,7 +182,7 @@ function handleGroupParticipantsUpdate(groupUpdateData) {
 
     case "promote":
       group.participants.forEach((participant) => {
-        if (groupUpdateData.participants.includes(participant.id)) {
+        if (groupUpdateData.participants?.includes(participant.id)) {
           participant.admin = "admin";
         }
       });
@@ -191,7 +190,7 @@ function handleGroupParticipantsUpdate(groupUpdateData) {
 
     case "demote":
       group.participants.forEach((participant) => {
-        if (groupUpdateData.participants.includes(participant.id)) {
+        if (groupUpdateData.participants?.includes(participant.id)) {
           participant.admin = null;
         }
       });
@@ -213,7 +212,7 @@ async function sendReportMessage(sock, recipientNumbers, content, quotedMessage)
   }
   const sendPromises = recipientNumbers.map(async (recipientNumber) => {
     let id = recipientNumber;
-    if (!recipientNumber.includes("whatsapp.net")) {
+    if (!recipientNumber?.includes("whatsapp.net")) {
       id = `${recipientNumber}@s.whatsapp.net`;
     }
 
@@ -270,6 +269,7 @@ async function runWhatsAppBot() {
 
     if (connection === "close") {
       consoleLogColor(`Conexão fechada: ${lastDisconnect.error?.message}`, ConsoleColors.RED);
+      isSending = false;
 
       const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut;
 
@@ -311,6 +311,7 @@ async function runWhatsAppBot() {
 
       if (Config.WA_VERSION != currentVersion) {
         Config.WA_VERSION = currentVersion;
+        consoleLogColor("Versão do WhatsApp atualizada. Salvando nova configuração...", ConsoleColors.YELLOW);
         saveConfig();
       }
       reconnectionAttempts = Config.MAX_RECONNECTION_ATTEMPTS;
@@ -341,7 +342,7 @@ async function runWhatsAppBot() {
       const sender = waMessage.key.remoteJid;
 
       if (!sender.endsWith("g.us")) {
-        if (Config.AUTHORIZED_NUMBERS.some((number) => sender.includes(number)) && !waMessage.key.fromMe) {
+        if (Config.AUTHORIZED_NUMBERS.some((number) => sender?.includes(number)) && !waMessage.key.fromMe) {
           const formattedNumber = sender
             .replace(TargetNumberSuffix, "")
             .replace(/^(\d+)(\d{2})(\d{4})(\d{4})$/, (_, countryCode, areaCode, part1, part2) => {
@@ -407,9 +408,11 @@ async function runWhatsAppBot() {
 
   sock.ev.on("groups.update", async (groupUpdateData) => {
     if (groupUpdateData?.length > 0) {
-      const group = GroupMetadataCache[groupUpdateData[0].id];
-      if (group) {
-        group.subject = groupUpdateData.subject;
+      for (const update of groupUpdateData) {
+        const group = GroupMetadataCache[update.id];
+        if (group) {
+          Object.assign(group, update);
+        }
       }
     }
   });
@@ -417,7 +420,7 @@ async function runWhatsAppBot() {
   sock.ev.on("groups.upsert", async (groupUpsertGroupMetadata) => {
     const groupMetadataObj = convertGroupsArrayToObject(groupUpsertGroupMetadata);
     if (groupMetadataObj) {
-      GroupMetadataCache = groupMetadataObj;
+      GroupMetadataCache = { ...GroupMetadataCache, ...groupMetadataObj };
     }
   });
 
@@ -449,8 +452,8 @@ async function runWhatsAppBot() {
           ConsoleColors.BRIGHT
         );
       }
+
       for (let i = lastGroupIndex; i < groupIds.length; i++) {
-        // Use index to track remaining groups
         const chatId = groupIds[i];
         const chat = GroupMetadataCache[chatId];
 
@@ -529,7 +532,7 @@ async function runWhatsAppBot() {
         }
 
         async function handleError(error, waMessage) {
-          if (error?.message.includes("imagem:")) {
+          if (error?.message?.includes("imagem:")) {
             consoleLogColor(error.message, ConsoleColors.RED);
             consoleLogColor("Alterando método para encaminhamento.", ConsoleColors.YELLOW);
             currentSendMethod = SendMethods.FORWARD;
@@ -540,8 +543,11 @@ async function runWhatsAppBot() {
             } else {
               consoleLogColor(error?.message || "Falha no envio!", ConsoleColors.RED);
             }
-            MessagePool.unshift(waMessage);
-            consoleLogColor(`Mensagem ${waMessage.key.id} devolvida para a fila.`, ConsoleColors.BRIGHT);
+            const nextMessage = MessagePool[0];
+            if (!nextMessage || nextMessage.key.id !== waMessage.key.id) {
+              MessagePool.unshift(waMessage);
+              consoleLogColor(`Mensagem ${waMessage.key.id} devolvida para a fila.`, ConsoleColors.BRIGHT);
+            }
             isSending = false;
           }
         }
