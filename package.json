@@ -11,9 +11,9 @@
     "url": "https://github.com/andre-mr/whatsapp-bot-baileys.git"
   },
   "dependencies": {
-    "@whiskeysockets/baileys": "^6.7.7",
-    "link-preview-js": "^3.0.5",
-    "qrcode-terminal": "^0.12.0"
+    "@whiskeysockets/baileys": "6.7.7",
+    "qrcode-terminal": "0.12.0",
+    "sharp": "0.32.6"
   },
   "scripts": {
     "start": "node app.js"

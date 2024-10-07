@@ -218,7 +218,7 @@ async function sendReportMessage(sock, recipientNumbers, content, quotedMessage)
 
     return new Promise(async (resolve) => {
       try {
-        await delay(Config.DELAY_BETWEEN_GROUPS || 1);
+        await delay(Config.DELAY_BETWEEN_GROUPS > 0 ? Config.DELAY_BETWEEN_GROUPS : 0);
 
         const sendMessagePromise = quotedMessage
           ? sock.sendMessage(id, { text: content }, { quoted: quotedMessage })
@@ -573,7 +573,7 @@ async function runWhatsAppBot() {
         // Check if there's a next group before pausing
         if (chatId !== groupIds[groupIds.length - 1]) {
           const randomDelay = Config.DELAY_BETWEEN_GROUPS + (Math.random() * 2 - 1);
-          await delay(randomDelay);
+          await delay(randomDelay > 0 ? randomDelay : 0);
         }
       }
 
@@ -598,7 +598,7 @@ async function runWhatsAppBot() {
         consoleLogColor("", ConsoleColors.RESET, false);
         consoleLogColor(`📩 Mensagens restantes: ${MessagePool.length}`, ConsoleColors.RESET);
         consoleLogColor(`⏳ Pausa de ${randomDelay.toFixed(2)} segundos entre mensagens...\n`, ConsoleColors.RESET);
-        await delay(randomDelay);
+        await delay(randomDelay > 0 ? randomDelay : 0);
       }
     }
 
