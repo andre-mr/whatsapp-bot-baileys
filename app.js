@@ -332,7 +332,28 @@ async function runWhatsAppBot() {
   });
 
   // Save user credentials
-  sock.ev.on("creds.update", saveCreds);
+  sock.ev.on("creds.update", async () => {
+    const userNumber = sock.user?.id?.match(/^\d+/)?.[0];
+
+    if (userNumber) {
+      if (!Config.OWN_NUMBER) {
+        consoleLogColor(`Número do bot registrado: ${userNumber}`, ConsoleColors.GREEN);
+        Config.OWN_NUMBER = userNumber;
+        saveConfig();
+      } else if (Config.OWN_NUMBER !== userNumber) {
+        consoleLogColor(
+          `❗ Novo número do bot registrado: ${userNumber} (anterior: ${Config.OWN_NUMBER})`,
+          ConsoleColors.YELLOW
+        );
+        Config.OWN_NUMBER = userNumber;
+        saveConfig();
+      }
+    } else {
+      consoleLogColor(`Número do bot não reconhecido: ${sock.user?.id}`, ConsoleColors.RED);
+    }
+
+    saveCreds();
+  });
 
   // Receive messages from WhatsApp
   sock.ev.on("messages.upsert", async ({ messages }) => {
@@ -378,12 +399,6 @@ async function runWhatsAppBot() {
             }
           }
         } else if (waMessage.key.fromMe) {
-          if (!Config.OWN_NUMBER) {
-            const ownNumber = waMessage.key.remoteJid.replace("@s.whatsapp.net", "");
-            consoleLogColor(`Número do bot registrado: ${ownNumber}`, ConsoleColors.GREEN);
-            Config.OWN_NUMBER = ownNumber;
-            saveConfig();
-          }
           const key = {
             remoteJid: waMessage.key.remoteJid,
             id: waMessage.key.id,
