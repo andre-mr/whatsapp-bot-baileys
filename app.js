@@ -40,6 +40,83 @@ process.on("unhandledRejection", async (reason) => {
   saveErrorLog(reasonMessage);
 });
 
+async function clearOldFiles(directory, retentionDays) {
+  const dirPath = path.resolve(directory);
+
+  try {
+    const files = await fs.promises.readdir(dirPath);
+
+    if (files.length === 0) {
+      // consoleLogColor("Nenhum arquivo encontrado no diretório.", ConsoleColors.YELLOW);
+      return;
+    }
+
+    const filesStats = await Promise.all(
+      files.map(async (file) => {
+        const filePath = path.resolve(dirPath, file);
+        const fileStat = await fs.promises.stat(filePath);
+        return { path: filePath, mtime: fileStat.mtime };
+      })
+    );
+
+    const mostRecentFile = filesStats.reduce((latest, current) => {
+      return current.mtime > latest.mtime ? current : latest;
+    });
+
+    const mostRecentDate = mostRecentFile.mtime;
+    const retentionLimit = new Date(mostRecentDate);
+    retentionLimit.setDate(retentionLimit.getDate() - retentionDays);
+
+    if (mostRecentDate < retentionLimit) {
+      // consoleLogColor("O arquivo mais recente já é considerado antigo. Nenhum arquivo removido.", ConsoleColors.YELLOW);
+      return;
+    }
+
+    const filesToRemove = filesStats.filter((file) => file.mtime < retentionLimit);
+
+    if (filesToRemove.length > 0) {
+      await Promise.all(
+        filesToRemove.map(async (file) => {
+          await fs.promises.unlink(file.path);
+        })
+      );
+      consoleLogColor(`Limpeza concluída. ${filesToRemove.length} arquivos de sessão expurgados.`, ConsoleColors.RESET);
+    }
+  } catch (error) {
+    consoleLogColor(`Erro ao expurgar arquivos de sessão antigos: ${error}`, ConsoleColors.YELLOW);
+  }
+}
+
+async function clearAllFiles(directory) {
+  const dirPath = path.resolve(directory);
+  try {
+    const files = await fs.promises.readdir(dirPath);
+
+    if (files.length === 0) {
+      // consoleLogColor("Nenhum arquivo encontrado no diretório.", ConsoleColors.YELLOW);
+      return true;
+    }
+    await Promise.all(
+      files.map(async (file) => {
+        const filePath = path.resolve(dirPath, file);
+        const fileStat = await fs.promises.stat(filePath);
+
+        if (fileStat.isDirectory()) {
+          await fs.promises.rmdir(filePath, { recursive: true });
+        } else {
+          await fs.promises.unlink(filePath);
+        }
+      })
+    );
+
+    consoleLogColor(`${files.length} arquivos de sessão removidos.`, ConsoleColors.RESET);
+    return true;
+  } catch (error) {
+    console.error(`Erro ao remover arquivos: ${error}`);
+    return false;
+  }
+}
+
 async function saveErrorLog(logMessage) {
   try {
     const __filename = fileURLToPath(import.meta.url);
@@ -63,7 +140,7 @@ function handleDisconnect(reconnectMessage) {
   }
 }
 
-const { state, saveCreds } = await useMultiFileAuthState("auth");
+let { state, saveCreds } = await useMultiFileAuthState("auth");
 const currentVersion = await getWhatsAppVersion();
 
 async function getWhatsAppVersion() {
@@ -250,6 +327,14 @@ async function sendReportMessage(sock, recipientNumbers, content, quotedMessage)
   await Promise.all(sendPromises);
 }
 
+function waitForQRGeneration() {
+  return new Promise((resolve) => {
+    rl.question("Pressione [ENTER] para ler novo QR Code...", () => {
+      resolve();
+    });
+  });
+}
+
 // Main function that controls the WhatsApp connection
 async function runWhatsAppBot() {
   consoleLogColor("Iniciando a aplicação...", ConsoleColors.BRIGHT, true);
@@ -268,7 +353,10 @@ async function runWhatsAppBot() {
     const { connection, lastDisconnect } = update;
 
     if (connection === "close") {
-      consoleLogColor(`Conexão fechada: ${lastDisconnect.error?.message}`, ConsoleColors.RED);
+      consoleLogColor(
+        `Conexão fechada: ${lastDisconnect.error?.output?.statusCode} ${lastDisconnect.error?.message}`,
+        ConsoleColors.RED
+      );
       isSending = false;
 
       const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut;
@@ -298,11 +386,33 @@ async function runWhatsAppBot() {
         }
 
         try {
-          await runWhatsAppBot();
+          await clearOldFiles("./auth", 2);
+          runWhatsAppBot();
         } catch (err) {
           consoleLogColor(`Erro durante reconexão:\n${err}`, ConsoleColors.RED);
         }
         return;
+      } else if (
+        lastDisconnect.error?.output?.statusCode == DisconnectReason.badSession ||
+        lastDisconnect.error?.output?.statusCode == DisconnectReason.loggedOut
+      ) {
+        consoleLogColor("Removendo dados de sessão...", ConsoleColors.YELLOW);
+        const authFilesRemoved = await clearAllFiles("./auth");
+        if (authFilesRemoved) {
+          consoleLogColor("Dados de sessão excluídos!", ConsoleColors.GREEN);
+          consoleLogColor("❗ Será necessário autorizar o bot novamente.", ConsoleColors.YELLOW);
+        } else {
+          consoleLogColor("Erro ao remover dados de sessão!", ConsoleColors.RED);
+          consoleLogColor(
+            "❗ Exclua manualmente o diretório [auth] antes de autorizar novamente.",
+            ConsoleColors.YELLOW
+          );
+        }
+
+        await waitForQRGeneration();
+        await sock.end();
+        ({ state, saveCreds } = await useMultiFileAuthState("auth"));
+        runWhatsAppBot();
       }
     } else if (connection === "open") {
       const newGroupMetadata = await sock.groupFetchAllParticipating();
@@ -348,8 +458,6 @@ async function runWhatsAppBot() {
         Config.OWN_NUMBER = userNumber;
         saveConfig();
       }
-    } else {
-      consoleLogColor(`Número do bot não reconhecido: ${sock.user?.id}`, ConsoleColors.RED);
     }
 
     saveCreds();
@@ -360,53 +468,48 @@ async function runWhatsAppBot() {
     for (const waMessage of messages) {
       if (!waMessage.message) continue; // Ignore messages without content
 
-      const sender = waMessage.key.remoteJid;
+      const sender =
+        waMessage.key && waMessage.key?.remoteJid?.endsWith("s.whatsapp.net")
+          ? waMessage.key.remoteJid
+          : waMessage.key.participant?.endsWith("s.whatsapp.net")
+          ? waMessage.key.participant
+          : "";
 
-      if (!sender.endsWith("g.us")) {
-        if (Config.AUTHORIZED_NUMBERS.some((number) => sender?.includes(number)) && !waMessage.key.fromMe) {
-          const formattedNumber = sender
-            .replace(TargetNumberSuffix, "")
-            .replace(/^(\d+)(\d{2})(\d{4})(\d{4})$/, (_, countryCode, areaCode, part1, part2) => {
-              return `(${areaCode}) ${part1}-${part2}`;
-            });
+      if (Config.AUTHORIZED_NUMBERS.some((number) => sender?.includes(number)) && !waMessage.key.fromMe) {
+        const formattedNumber = sender
+          .replace(TargetNumberSuffix, "")
+          .replace(/^(\d+)(\d{2})(\d{4})(\d{4})$/, (_, countryCode, areaCode, part1, part2) => {
+            return `(${areaCode}) ${part1}-${part2}`;
+          });
 
-          const messageContent = waMessage.message?.conversation || waMessage?.message?.extendedTextMessage?.text;
-          if (messageContent && /^(status|\?)$/i.test(messageContent.trim())) {
-            consoleLogColor(`Status solicitado por: ${formattedNumber}`, ConsoleColors.YELLOW);
-            const currentStatus = isSending
-              ? MessagePool.length === 1
-                ? `🔄 Enviando mensagem!\n1 restante na fila.`
-                : `🔄 Enviando mensagem!\n${MessagePool.length} restantes na fila.`
-              : "🟢 Online!\nAguardando novas mensagens.";
-            const currentStatistics = `${
-              SessionStats.totalMessagesSent === 1
-                ? `${SessionStats.totalMessagesSent} mensagem enviada`
-                : `${SessionStats.totalMessagesSent} mensagens enviadas`
-            } desde o início da sessão em ${new Date(SessionStats.startTime).toLocaleString()}`;
-            const statusReply = `${currentStatus}\n${currentStatistics}`;
-            sendReportMessage(sock, sender, statusReply, waMessage);
-          } else {
-            consoleLogColor(`Mensagem ${waMessage.key.id} recebida de: ${formattedNumber}`, ConsoleColors.YELLOW);
-            const messageExistsInPool =
-              MessagePool.length > 0 &&
-              MessagePool.some(
-                (existingMessage) =>
-                  existingMessage.key.id === waMessage.key.id &&
-                  existingMessage.key.remoteJid === waMessage.key.remoteJid
-              );
-            if (!messageExistsInPool) {
-              MessagePool.push(waMessage);
-            }
+        const messageContent = waMessage.message?.conversation || waMessage?.message?.extendedTextMessage?.text;
+        if (messageContent && /^(status|\?)$/i.test(messageContent.trim())) {
+          consoleLogColor(`Status solicitado por: ${formattedNumber}`, ConsoleColors.YELLOW);
+          const currentStatus = isSending
+            ? MessagePool.length === 1
+              ? `🔄 Enviando mensagem!\n1 restante na fila.`
+              : `🔄 Enviando mensagem!\n${MessagePool.length} restantes na fila.`
+            : "🟢 Online!\nAguardando novas mensagens.";
+          const currentStatistics = `${
+            SessionStats.totalMessagesSent === 1
+              ? `${SessionStats.totalMessagesSent} mensagem enviada`
+              : `${SessionStats.totalMessagesSent} mensagens enviadas`
+          } desde o início da sessão em ${new Date(SessionStats.startTime).toLocaleString()}`;
+          const statusReply = `${currentStatus}\n${currentStatistics}`;
+          sendReportMessage(sock, sender, statusReply, waMessage);
+        } else {
+          consoleLogColor(`Mensagem ${waMessage.key.id} recebida de: ${formattedNumber}`, ConsoleColors.YELLOW);
+          const messageExistsInPool =
+            MessagePool.length > 0 &&
+            MessagePool.some(
+              (existingMessage) =>
+                existingMessage.key.id === waMessage.key.id && existingMessage.key.remoteJid === waMessage.key.remoteJid
+            );
+          if (!messageExistsInPool) {
+            MessagePool.push(waMessage);
           }
-        } else if (waMessage.key.fromMe) {
-          const key = {
-            remoteJid: waMessage.key.remoteJid,
-            id: waMessage.key.id,
-            participant: waMessage?.participant || undefined, // participant if group only
-          };
-          await sock.readMessages([key]);
         }
-      } else {
+      } else if (waMessage.key.fromMe) {
         const key = {
           remoteJid: waMessage.key.remoteJid,
           id: waMessage.key.id,
@@ -414,6 +517,12 @@ async function runWhatsAppBot() {
         };
         await sock.readMessages([key]);
       }
+      const key = {
+        remoteJid: waMessage.key.remoteJid,
+        id: waMessage.key.id,
+        participant: waMessage?.participant || undefined, // participant if group only
+      };
+      await sock.readMessages([key]);
     }
 
     if (MessagePool.length > 0 && !isSending) {
@@ -628,5 +737,10 @@ async function runWhatsAppBot() {
   }
 }
 
-setupInputListener();
-runWhatsAppBot();
+const startApp = async () => {
+  await clearOldFiles("./auth", 2);
+  setupInputListener();
+  runWhatsAppBot();
+};
+
+startApp();
