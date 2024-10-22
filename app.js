@@ -413,6 +413,7 @@ async function runWhatsAppBot() {
         await sock.end();
         ({ state, saveCreds } = await useMultiFileAuthState("auth"));
         runWhatsAppBot();
+        return;
       }
     } else if (connection === "open") {
       const newGroupMetadata = await sock.groupFetchAllParticipating();
