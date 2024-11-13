@@ -1,4 +1,4 @@
-import { ConsoleColors, SendMethods } from "./constants.js";
+import { ConsoleColors, ImageAspects, SendMethods } from "./constants.js";
 import { consoleLogColor } from "./utils.js";
 import { Config, showCurrentConfig, saveConfig } from "./config.js";
 import { setMenuState } from "./utils.js"; // Import the function
@@ -40,11 +40,12 @@ function displayMenuOptions() {
   consoleLogColor("\nMenu de configurações", ConsoleColors.YELLOW, false, true);
   const menuOptions = [
     "1. Método de envio padrão",
-    "2. Pausa entre grupos",
-    "3. Pausa entre mensagens",
-    "4. Números autorizados",
-    "5. Palavras-chave para grupos",
-    "6. Mostrar configurações",
+    "2. Aspecto de imagem",
+    "3. Pausa entre grupos",
+    "4. Pausa entre mensagens",
+    "5. Números autorizados",
+    "6. Palavras-chave para grupos",
+    "7. Mostrar configurações",
     "0. Sair do menu",
   ];
   consoleLogColor(menuOptions.join("\n"), ConsoleColors.BRIGHT, false, true);
@@ -57,22 +58,26 @@ async function handleMenuOption(option, rl) {
       return false;
 
     case "2":
-      await modifyDelayBetweenGroups(rl);
+      await modifyImageAspect(rl);
       return false;
 
     case "3":
-      await modifyDelayBetweenMessages(rl);
+      await modifyDelayBetweenGroups(rl);
       return false;
 
     case "4":
-      await modifyArrayOption("AUTHORIZED_NUMBERS", rl);
+      await modifyDelayBetweenMessages(rl);
       return false;
 
     case "5":
-      await modifyArrayOption("GROUP_NAME_KEYWORDS", rl);
+      await modifyArrayOption("AUTHORIZED_NUMBERS", rl);
       return false;
 
     case "6":
+      await modifyArrayOption("GROUP_NAME_KEYWORDS", rl);
+      return false;
+
+    case "7":
       showCurrentConfig();
       return false;
 
@@ -136,6 +141,50 @@ function modifySendMethod(rl) {
           Config.DEFAULT_SEND_METHOD = SendMethods.IMAGE;
           saveConfig();
           consoleLogColor(`Método de envio atualizado para: "Imagem"`, ConsoleColors.GREEN, false, true);
+          break;
+        case "0":
+          break;
+        default:
+          consoleLogColor("Opção inválida!", ConsoleColors.RED, false, true);
+      }
+      resolve();
+    });
+  });
+}
+
+function modifyImageAspect(rl) {
+  return new Promise((resolve) => {
+    consoleLogColor(
+      `\nAspecto de imagem atual: "${Config.IMAGE_ASPECT === ImageAspects.ORIGINAL ? "Original" : "Quadrado"}"\n`,
+      ConsoleColors.CYAN,
+      false,
+      true
+    );
+
+    consoleLogColor(
+      ["1. Original", "2. Quadrado", "0. Voltar ao menu principal"].join("\n"),
+      ConsoleColors.BRIGHT,
+      false,
+      true
+    );
+
+    rl.question("\nEscolha o novo aspecto de imagem: ", (newAspect) => {
+      consoleLogColor(
+        "--------------------------------------------------------------------------------",
+        ConsoleColors.RESET,
+        false,
+        true
+      );
+      switch (newAspect) {
+        case "1":
+          Config.IMAGE_ASPECT = ImageAspects.ORIGINAL;
+          saveConfig();
+          consoleLogColor(`Aspecto de imagem atualizado para: "Original"`, ConsoleColors.GREEN, false, true);
+          break;
+        case "2":
+          Config.IMAGE_ASPECT = ImageAspects.SQUARE;
+          saveConfig();
+          consoleLogColor(`Aspecto de imagem atualizado para: "Quadrado"`, ConsoleColors.GREEN, false, true);
           break;
         case "0":
           break;

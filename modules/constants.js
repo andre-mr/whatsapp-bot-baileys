@@ -13,4 +13,9 @@ export const SendMethods = {
   IMAGE: "IMAGE",
 };
 
+export const ImageAspects = {
+  ORIGINAL: "ORIGINAL",
+  SQUARE: "SQUARE",
+};
+
 export const TargetNumberSuffix = "@s.whatsapp.net";

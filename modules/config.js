@@ -1,10 +1,22 @@
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import { ConsoleColors, SendMethods } from "./constants.js";
+import { ConsoleColors, SendMethods, ImageAspects } from "./constants.js";
 import { consoleLogColor } from "./utils.js";
 
+const defaultConfig = {
+  AUTHORIZED_NUMBERS: [],
+  GROUP_NAME_KEYWORDS: [],
+  DEFAULT_SEND_METHOD: SendMethods.FORWARD,
+  IMAGE_ASPECT: ImageAspects.ORIGINAL,
+  DELAY_BETWEEN_GROUPS: 2,
+  DELAY_BETWEEN_MESSAGES: 20,
+  MAX_RECONNECTION_ATTEMPTS: 5,
+  OWN_NUMBER: "",
+  WA_VERSION: [2, 3000, 1015901307],
+};
 let Config = {};
+
 const SessionStats = {
   startTime: new Date().toISOString(),
   totalGroups: 0,
@@ -18,6 +30,7 @@ export function loadConfig() {
     const configPath = path.join(__dirname, "./config.json");
     const data = fs.readFileSync(configPath, "utf8");
     Config = JSON.parse(data);
+    validateConfig();
     consoleLogColor("Configurações carregadas com sucesso.\n", ConsoleColors.GREEN);
     const configSummary = `Número do bot: ${Config.OWN_NUMBER}
 Versão do WhatsApp: ${Config.WA_VERSION.join(".")}
@@ -31,6 +44,7 @@ Método de Envio Padrão: ${
         ? "Imagem"
         : "Desconhecido"
     }
+Aspecto da Imagem: ${Config.IMAGE_ASPECT === ImageAspects.ORIGINAL ? "Original" : "Quadrado"}
 Pausa entre Grupos: ${Config.DELAY_BETWEEN_GROUPS} segundos
 Pausa entre Mensagens: ${Config.DELAY_BETWEEN_MESSAGES} segundos
 Números Autorizados: ${Config.AUTHORIZED_NUMBERS.length}
@@ -45,6 +59,7 @@ Palavras-chave para grupos: ${Config.GROUP_NAME_KEYWORDS.length}
       AUTHORIZED_NUMBERS: [],
       GROUP_NAME_KEYWORDS: [],
       DEFAULT_SEND_METHOD: SendMethods.FORWARD,
+      IMAGE_ASPECT: ImageAspects.ORIGINAL,
       DELAY_BETWEEN_GROUPS: 2,
       DELAY_BETWEEN_MESSAGES: 20,
       MAX_RECONNECTION_ATTEMPTS: 5,
@@ -53,6 +68,27 @@ Palavras-chave para grupos: ${Config.GROUP_NAME_KEYWORDS.length}
     };
     saveConfig();
     return Config;
+  }
+}
+
+function validateConfig() {
+  let configModified = false;
+
+  const orderedConfig = {};
+  for (const key in defaultConfig) {
+    if (Config.hasOwnProperty(key)) {
+      orderedConfig[key] = Config[key];
+    } else {
+      orderedConfig[key] = defaultConfig[key];
+      configModified = true;
+      consoleLogColor(`Campo ausente '${key}' adicionado com valor padrão.`, ConsoleColors.YELLOW);
+    }
+  }
+  Config = orderedConfig;
+
+  if (configModified) {
+    saveConfig();
+    consoleLogColor("Arquivo de configuração atualizado com campos ausentes.", ConsoleColors.GREEN);
   }
 }
 
@@ -105,6 +141,7 @@ Método de envio padrão: ${
       ? "Imagem"
       : "Desconhecido"
   }
+Aspecto da Imagem: ${Config.IMAGE_ASPECT === ImageAspects.ORIGINAL ? "Original" : "Quadrado"}
 Pausa entre grupos: ${Config.DELAY_BETWEEN_GROUPS} segundos
 Pausa entre mensagens: ${Config.DELAY_BETWEEN_MESSAGES} segundos
 Números autorizados: ${Config.AUTHORIZED_NUMBERS.length}

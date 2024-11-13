@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import sharp from "sharp";
 const appDirectoryName = path.basename(process.cwd());
 
 import readline from "readline";
@@ -10,7 +11,7 @@ import {
   fetchLatestWaWebVersion,
   DisconnectReason,
 } from "@whiskeysockets/baileys";
-import { ConsoleColors, SendMethods, TargetNumberSuffix } from "./modules/constants.js";
+import { ConsoleColors, ImageAspects, SendMethods, TargetNumberSuffix } from "./modules/constants.js";
 import { consoleLogColor, fetchWhatsAppVersion, deepEqual } from "./modules/utils.js";
 import { showMainMenu } from "./modules/menu.js";
 import { Config, saveConfig, SessionStats } from "./modules/config.js";
@@ -534,7 +535,7 @@ async function runWhatsAppBot() {
   sock.ev.on("groups.update", async (groupUpdateData) => {
     if (groupUpdateData?.length > 0) {
       for (const update of groupUpdateData) {
-        const group = GroupMetadataCache[update.id];
+        const group = GroupMetadataCache[update?.id];
         if (group) {
           Object.assign(group, update);
         }
@@ -545,7 +546,15 @@ async function runWhatsAppBot() {
   sock.ev.on("groups.upsert", async (groupUpsertGroupMetadata) => {
     const groupMetadataObj = convertGroupsArrayToObject(groupUpsertGroupMetadata);
     if (groupMetadataObj) {
-      GroupMetadataCache = { ...GroupMetadataCache, ...groupMetadataObj };
+      const key = Object.keys(groupMetadataObj)[0];
+      const subject = groupMetadataObj[key]?.subject?.toLowerCase();
+      consoleLogColor(`Bot adicionado ao grupo '${groupMetadataObj[key].subject}'`, ConsoleColors.YELLOW);
+      if (Config.GROUP_NAME_KEYWORDS.some((keyword) => subject?.includes(keyword.toLowerCase()))) {
+        consoleLogColor(`Grupo adicionado à lista de envios!`, ConsoleColors.GREEN);
+        GroupMetadataCache = { ...GroupMetadataCache, ...groupMetadataObj };
+      } else {
+        consoleLogColor(`Grupo sem palavras-chave para a lista de envios!`, ConsoleColors.YELLOW);
+      }
     }
   });
 
@@ -565,6 +574,58 @@ async function runWhatsAppBot() {
     while (MessagePool.length > 0) {
       let currentSendMethod = Config.DEFAULT_SEND_METHOD;
       const waMessage = MessagePool.shift();
+
+      let imageCaption, imageBuffer, thumbnailBufferBase64;
+
+      if (currentSendMethod == SendMethods.IMAGE) {
+        try {
+          imageCaption = waMessage?.message?.extendedTextMessage?.text || waMessage.message?.conversation;
+          const urlMatch = imageCaption?.match(/https?:\/\/[^\s]+/);
+
+          if (!urlMatch) {
+            throw new Error("Erro ao preparar imagem: nenhuma URL na mensagem!");
+          }
+
+          const url = urlMatch[0];
+          const response = await fetch(url);
+
+          if (!response?.ok) {
+            throw new Error("Erro ao preparar imagem: falha ao baixar!");
+          }
+
+          const html = await response.text();
+          const ogImageMatch = html.match(/<meta property="og:image" content="([^"]+)"/);
+
+          if (!ogImageMatch) {
+            throw new Error("Erro ao preparar imagem: URL não encontrada!");
+          }
+
+          const imageUrl = ogImageMatch[1];
+
+          const responseImage = await fetch(imageUrl);
+          const arrayBuffer = await responseImage.arrayBuffer();
+          const buffer = Buffer.from(arrayBuffer);
+          imageBuffer = await sharp(buffer)
+            .resize(Config.IMAGE_ASPECT == ImageAspects.ORIGINAL ? 500 : 300, 300)
+            .jpeg({ quality: 50 })
+            .toBuffer();
+          const thumbnailBuffer = await sharp(buffer)
+            .resize(300, Config.IMAGE_ASPECT == ImageAspects.ORIGINAL ? 180 : 300)
+            .jpeg({ quality: 50 })
+            .toBuffer();
+          thumbnailBufferBase64 = thumbnailBuffer.toString("base64");
+        } catch (error) {
+          if (error?.message?.includes("imagem:")) {
+            consoleLogColor(error.message, ConsoleColors.RED);
+          } else {
+            consoleLogColor("Erro ao enviar como imagem!", ConsoleColors.RED);
+          }
+          consoleLogColor("Alterando método para encaminhamento.", ConsoleColors.YELLOW);
+          currentSendMethod = SendMethods.FORWARD;
+          await delay(5);
+        }
+      }
+
       const groupIds = Object.keys(GroupMetadataCache);
       if (lastGroupIndex > 0) {
         consoleLogColor(
@@ -592,7 +653,7 @@ async function runWhatsAppBot() {
               break;
 
             case SendMethods.IMAGE:
-              await handleImageSend(waMessage, chat.id, sock);
+              await handleImageSend();
               break;
 
             default:
@@ -621,34 +682,14 @@ async function runWhatsAppBot() {
           }
         }
 
-        async function handleImageSend(waMessage, chatId, sock) {
-          const text = waMessage?.message?.extendedTextMessage?.text || waMessage.message?.conversation;
-          const urlMatch = text?.match(/https?:\/\/[^\s]+/);
-
-          if (!urlMatch) {
-            throw new Error("Erro ao preparar imagem: nenhuma URL na mensagem!");
-          }
-
-          const url = urlMatch[0];
-          const response = await fetch(url);
-
-          if (!response?.ok) {
-            throw new Error("Erro ao preparar imagem: falha ao baixar!");
-          }
-
-          const html = await response.text();
-          const ogImageMatch = html.match(/<meta property="og:image" content="([^"]+)"/);
-
-          if (!ogImageMatch) {
-            throw new Error("Erro ao preparar imagem: URL não encontrada!");
-          }
-
-          const imageUrl = ogImageMatch[1];
+        async function handleImageSend() {
           await handleSendMethod(() => {
             return sock
               .sendMessage(chatId, {
-                image: { url: imageUrl },
-                caption: text,
+                image: imageBuffer,
+                caption: imageCaption,
+                mimetype: "image/jpeg",
+                jpegThumbnail: thumbnailBufferBase64,
               })
               .catch((error) => {
                 throw new Error("Erro ao enviar imagem!");
@@ -657,24 +698,17 @@ async function runWhatsAppBot() {
         }
 
         async function handleError(error, waMessage) {
-          if (error?.message?.includes("imagem:")) {
-            consoleLogColor(error.message, ConsoleColors.RED);
-            consoleLogColor("Alterando método para encaminhamento.", ConsoleColors.YELLOW);
-            currentSendMethod = SendMethods.FORWARD;
-            await delay(5);
+          if (error?.message == "Timeout" || error?.message == "Timed Out") {
+            consoleLogColor(`Falha no envio da mensagem ${waMessage.key.id} - tempo excedido!`, ConsoleColors.RED);
           } else {
-            if (error?.message == "Timeout" || error?.message == "Timed Out") {
-              consoleLogColor(`Falha no envio da mensagem ${waMessage.key.id} - tempo excedido!`, ConsoleColors.RED);
-            } else {
-              consoleLogColor(error?.message || "Falha no envio!", ConsoleColors.RED);
-            }
-            const nextMessage = MessagePool[0];
-            if (!nextMessage || nextMessage.key.id !== waMessage.key.id) {
-              MessagePool.unshift(waMessage);
-              consoleLogColor(`Mensagem ${waMessage.key.id} devolvida para a fila.`, ConsoleColors.BRIGHT);
-            }
-            isSending = false;
+            consoleLogColor(error?.message || "Falha no envio!", ConsoleColors.RED);
           }
+          const nextMessage = MessagePool[0];
+          if (!nextMessage || nextMessage.key.id !== waMessage.key.id) {
+            MessagePool.unshift(waMessage);
+            consoleLogColor(`Mensagem ${waMessage.key.id} devolvida para a fila.`, ConsoleColors.BRIGHT);
+          }
+          isSending = false;
         }
 
         if (!isSending) {
