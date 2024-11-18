@@ -7,6 +7,7 @@ import { consoleLogColor } from "./utils.js";
 const defaultConfig = {
   AUTHORIZED_NUMBERS: [],
   GROUP_NAME_KEYWORDS: [],
+  GROUP_STATISTICS: false,
   DEFAULT_SEND_METHOD: SendMethods.FORWARD,
   IMAGE_ASPECT: ImageAspects.ORIGINAL,
   DELAY_BETWEEN_GROUPS: 2,
@@ -49,6 +50,7 @@ Pausa entre Grupos: ${Config.DELAY_BETWEEN_GROUPS} segundos
 Pausa entre Mensagens: ${Config.DELAY_BETWEEN_MESSAGES} segundos
 Números Autorizados: ${Config.AUTHORIZED_NUMBERS.length}
 Palavras-chave para grupos: ${Config.GROUP_NAME_KEYWORDS.length}
+Registro de estatísticas de grupos: ${Config.GROUP_STATISTICS ? "Ativado" : "Desativado"}
 `;
     consoleLogColor(configSummary, ConsoleColors.CYAN, false);
     return Config;
@@ -58,6 +60,7 @@ Palavras-chave para grupos: ${Config.GROUP_NAME_KEYWORDS.length}
     Config = {
       AUTHORIZED_NUMBERS: [],
       GROUP_NAME_KEYWORDS: [],
+      GROUP_STATISTICS: false,
       DEFAULT_SEND_METHOD: SendMethods.FORWARD,
       IMAGE_ASPECT: ImageAspects.ORIGINAL,
       DELAY_BETWEEN_GROUPS: 2,
@@ -146,7 +149,8 @@ Pausa entre grupos: ${Config.DELAY_BETWEEN_GROUPS} segundos
 Pausa entre mensagens: ${Config.DELAY_BETWEEN_MESSAGES} segundos
 Números autorizados: ${Config.AUTHORIZED_NUMBERS.length}
 Palavras-chave para grupos: ${Config.GROUP_NAME_KEYWORDS.length}
-Grupos carregados para envio: ${SessionStats.totalGroups}`;
+Grupos carregados para envio: ${SessionStats.totalGroups}
+Registro de estatísticas de grupos: ${Config.GROUP_STATISTICS ? "Ativado" : "Desativado"}`;
 
   consoleLogColor(configFormatted, ConsoleColors.CYAN, false, true);
 }

@@ -15,6 +15,7 @@ import { ConsoleColors, ImageAspects, SendMethods, TargetNumberSuffix } from "./
 import { consoleLogColor, fetchWhatsAppVersion, deepEqual } from "./modules/utils.js";
 import { showMainMenu } from "./modules/menu.js";
 import { Config, saveConfig, SessionStats } from "./modules/config.js";
+import { updateGroupStatistics, getStatistics, startupAllGroups } from "./modules/statistics.js";
 import pino from "pino";
 
 process.stdout.write(`\x1b]2;${appDirectoryName} - ${Config.OWN_NUMBER}\x07`);
@@ -245,6 +246,10 @@ function handleGroupParticipantsUpdate(groupUpdateData) {
     return;
   }
 
+  if (Config.GROUP_STATISTICS && ["add", "remove"].includes(groupUpdateData.action)) {
+    updateGroupStatistics(groupUpdateData, group.subject, group.size);
+  }
+
   switch (groupUpdateData.action) {
     case "remove":
       group.participants = group.participants.filter(
@@ -420,6 +425,19 @@ async function runWhatsAppBot() {
       const newGroupMetadata = await sock.groupFetchAllParticipating();
       await createGroupMetadataCache(newGroupMetadata);
       consoleLogColor(`${SessionStats.totalGroups} grupos carregados.`, ConsoleColors.YELLOW);
+      let totalParticipants = 0;
+      const allGroupStartupInfo = [];
+      for (const groupId in GroupMetadataCache) {
+        const groupSize = GroupMetadataCache[groupId]?.size || 0;
+        const groupName = GroupMetadataCache[groupId]?.subject || "";
+        totalParticipants += groupSize;
+        const groupStartupInfo = { groupId: groupId.replace("@g.us", ""), groupName, groupSize };
+        allGroupStartupInfo.push(groupStartupInfo);
+      }
+      if (Config.GROUP_STATISTICS) {
+        await startupAllGroups(allGroupStartupInfo);
+      }
+      consoleLogColor(`${totalParticipants} membros.`, ConsoleColors.YELLOW);
 
       if (Config.WA_VERSION != currentVersion) {
         Config.WA_VERSION = currentVersion;
@@ -499,16 +517,32 @@ async function runWhatsAppBot() {
           } desde o início da sessão em ${new Date(SessionStats.startTime).toLocaleString()}`;
           const statusReply = `${currentStatus}\n${currentStatistics}`;
           sendReportMessage(sock, sender, statusReply, waMessage);
+        } else if (messageContent && (messageContent.startsWith("stats") || messageContent.startsWith("+stats"))) {
+          if (Config.GROUP_STATISTICS && /^(\+?stats)(\s([1-9]|1[0-9]|2[0-9]|30))?$/i.test(messageContent.trim())) {
+            consoleLogColor(`Estatísticas solicitadas por: ${formattedNumber}`, ConsoleColors.YELLOW);
+
+            const daysMatch = messageContent.trim().match(/^(\+?stats)\s?([1-9]|1[0-9]|2[0-9]|30)?$/i);
+            const days = daysMatch && daysMatch[2] ? parseInt(daysMatch[2], 10) : 0; // Se não houver número, usa 0 como padrão
+
+            const isDetailed = messageContent.startsWith("+stats");
+
+            const statsMessage = getStatistics(days, isDetailed);
+
+            sendReportMessage(sock, sender, statsMessage, waMessage);
+          }
         } else {
-          consoleLogColor(`Mensagem ${waMessage.key.id} recebida de: ${formattedNumber}`, ConsoleColors.YELLOW);
-          const messageExistsInPool =
-            MessagePool.length > 0 &&
-            MessagePool.some(
-              (existingMessage) =>
-                existingMessage.key.id === waMessage.key.id && existingMessage.key.remoteJid === waMessage.key.remoteJid
-            );
-          if (!messageExistsInPool) {
-            MessagePool.push(waMessage);
+          if (messageContent.length > 20) {
+            consoleLogColor(`Mensagem ${waMessage.key.id} recebida de: ${formattedNumber}`, ConsoleColors.YELLOW);
+            const messageExistsInPool =
+              MessagePool.length > 0 &&
+              MessagePool.some(
+                (existingMessage) =>
+                  existingMessage.key.id === waMessage.key.id &&
+                  existingMessage.key.remoteJid === waMessage.key.remoteJid
+              );
+            if (!messageExistsInPool) {
+              MessagePool.push(waMessage);
+            }
           }
         }
       } else if (waMessage.key.fromMe) {

@@ -1,6 +1,7 @@
 import { ConsoleColors, ImageAspects, SendMethods } from "./constants.js";
 import { consoleLogColor } from "./utils.js";
 import { Config, showCurrentConfig, saveConfig } from "./config.js";
+import { printStatistics } from "./statistics.js";
 import { setMenuState } from "./utils.js"; // Import the function
 
 export async function showMainMenu(rl) {
@@ -26,7 +27,7 @@ function askQuestion(rl, question) {
     // Removed reject
     const timeout = setTimeout(() => {
       rl.write("0\n"); // Simulates typing "0" and sends
-      consoleLogColor("Tempo excedido, menu encerrado.", ConsoleColors.RED, false, true);
+      consoleLogColor("Tempo excedido, menu encerrado.", ConsoleColors.YELLOW, false, true);
     }, 30000);
 
     rl.question(question, (answer) => {
@@ -38,6 +39,7 @@ function askQuestion(rl, question) {
 
 function displayMenuOptions() {
   consoleLogColor("\nMenu de configurações", ConsoleColors.YELLOW, false, true);
+
   const menuOptions = [
     "1. Método de envio padrão",
     "2. Aspecto de imagem",
@@ -45,7 +47,8 @@ function displayMenuOptions() {
     "4. Pausa entre mensagens",
     "5. Números autorizados",
     "6. Palavras-chave para grupos",
-    "7. Mostrar configurações",
+    "7. Estatísticas de grupos",
+    "8. Mostrar configurações",
     "0. Sair do menu",
   ];
   consoleLogColor(menuOptions.join("\n"), ConsoleColors.BRIGHT, false, true);
@@ -78,6 +81,10 @@ async function handleMenuOption(option, rl) {
       return false;
 
     case "7":
+      await groupStatistics(rl);
+      return false;
+
+    case "8":
       showCurrentConfig();
       return false;
 
@@ -185,6 +192,53 @@ function modifyImageAspect(rl) {
           Config.IMAGE_ASPECT = ImageAspects.SQUARE;
           saveConfig();
           consoleLogColor(`Aspecto de imagem atualizado para: "Quadrado"`, ConsoleColors.GREEN, false, true);
+          break;
+        case "0":
+          break;
+        default:
+          consoleLogColor("Opção inválida!", ConsoleColors.RED, false, true);
+      }
+      resolve();
+    });
+  });
+}
+
+function groupStatistics(rl) {
+  return new Promise((resolve) => {
+    consoleLogColor(
+      `\nOpção atual: "${Config.GROUP_STATISTICS ? "Ativado" : "Desativado"}"\n`,
+      ConsoleColors.CYAN,
+      false,
+      true
+    );
+
+    consoleLogColor(
+      ["1. Ativar", "2. Desativar", "3. Mostrar estatísticas", "0. Voltar ao menu principal"].join("\n"),
+      ConsoleColors.BRIGHT,
+      false,
+      true
+    );
+
+    rl.question("\nEscolha a nova opção: ", (newOption) => {
+      consoleLogColor(
+        "--------------------------------------------------------------------------------",
+        ConsoleColors.RESET,
+        false,
+        true
+      );
+      switch (newOption) {
+        case "1":
+          Config.GROUP_STATISTICS = true;
+          saveConfig();
+          consoleLogColor(`Registro de estatísticas de grupos ativado.`, ConsoleColors.GREEN, false, true);
+          break;
+        case "2":
+          Config.GROUP_STATISTICS = false;
+          saveConfig();
+          consoleLogColor(`Registro de estatísticas de grupos desativado.`, ConsoleColors.GREEN, false, true);
+          break;
+        case "3":
+          printStatistics();
           break;
         case "0":
           break;
