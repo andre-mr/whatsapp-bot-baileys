@@ -155,7 +155,7 @@ async function getWhatsAppVersion() {
       if (v2[i] > v1[i] && v2[i] > v3[i]) return v2;
       if (v3[i] > v1[i] && v3[i] > v2[i]) return v3;
     }
-    return v1; // If all versions are equal, return the Config version
+    return v1;
   };
   const currentVersion = compareVersions(configVersion, latestVersionBaileys?.version || [], latestVersionCustom || []);
 
@@ -231,7 +231,7 @@ function convertGroupsArrayToObject(groupsArray) {
 
   groupsArray.forEach((group) => {
     const { id, ...rest } = group;
-    groupsObject[id] = rest; // Store all without id
+    groupsObject[id] = rest;
   });
 
   return groupsObject;
@@ -325,7 +325,7 @@ async function sendReportMessage(sock, recipientNumbers, content, quotedMessage)
         } else {
           consoleLogColor(`Erro ao enviar mensagem para ${recipientNumber}: ${error?.message}`, ConsoleColors.RED);
         }
-        resolve(); // Resolve even on error to continue with other messages
+        resolve();
       }
     });
   });
@@ -461,7 +461,6 @@ async function runWhatsAppBot() {
     }
   });
 
-  // Save user credentials
   sock.ev.on("creds.update", async () => {
     const userNumber = sock.user?.id?.match(/^\d+/)?.[0];
 
@@ -483,10 +482,9 @@ async function runWhatsAppBot() {
     saveCreds();
   });
 
-  // Receive messages from WhatsApp
   sock.ev.on("messages.upsert", async ({ messages }) => {
     for (const waMessage of messages) {
-      if (!waMessage.message) continue; // Ignore messages without content
+      if (!waMessage.message) continue;
 
       const sender =
         waMessage.key && waMessage.key?.remoteJid?.endsWith("s.whatsapp.net")
@@ -522,7 +520,7 @@ async function runWhatsAppBot() {
             consoleLogColor(`Estatísticas solicitadas por: ${formattedNumber}`, ConsoleColors.YELLOW);
 
             const daysMatch = messageContent.trim().match(/^(\+?stats)\s?([1-9]|1[0-9]|2[0-9]|30)?$/i);
-            const days = daysMatch && daysMatch[2] ? parseInt(daysMatch[2], 10) : 0; // Se não houver número, usa 0 como padrão
+            const days = daysMatch && daysMatch[2] ? parseInt(daysMatch[2], 10) : 0;
 
             const isDetailed = messageContent.startsWith("+stats");
 
@@ -549,14 +547,14 @@ async function runWhatsAppBot() {
         const key = {
           remoteJid: waMessage.key.remoteJid,
           id: waMessage.key.id,
-          participant: waMessage?.participant || undefined, // participant if group only
+          participant: waMessage?.participant || undefined,
         };
         await sock.readMessages([key]);
       }
       const key = {
         remoteJid: waMessage.key.remoteJid,
         id: waMessage.key.id,
-        participant: waMessage?.participant || undefined, // participant if group only
+        participant: waMessage?.participant || undefined,
       };
       await sock.readMessages([key]);
     }
@@ -763,7 +761,6 @@ async function runWhatsAppBot() {
           ConsoleColors.RESET
         );
 
-        // Check if there's a next group before pausing
         if (chatId !== groupIds[groupIds.length - 1]) {
           const randomDelay = Config.DELAY_BETWEEN_GROUPS + (Math.random() * 2 - 1);
           await delay(randomDelay > 0 ? randomDelay : 0);

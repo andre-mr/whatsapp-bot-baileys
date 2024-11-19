@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import { consoleLogColor } from "./utils.js";
+import { consoleLogColor, formatMillisecondsToTime } from "./utils.js";
 import { ConsoleColors } from "./constants.js";
 
 /**
@@ -83,6 +83,9 @@ export function printStatistics() {
   let totalMonthRemove = 0;
   let totalMonthDropout = 0;
   let totalParticipants = 0;
+  let totalDropoutTime = 0;
+  let totalDropoutCount = 0;
+
   for (const groupId in groupsById) {
     totalParticipants += groupsById[groupId]?.group_size || 0;
   }
@@ -93,6 +96,8 @@ export function printStatistics() {
     let totalDayAdd = 0;
     let totalDayRemove = 0;
     let totalDayDropout = 0;
+    let totalDayDropoutTime = 0;
+    let totalDayDropoutTimeCount = 0;
     let hasGroupData = false;
     let dailyOutput = [];
 
@@ -107,18 +112,30 @@ export function printStatistics() {
 
         if (dailyStat) {
           totalDateParticipants += groupInfo.group_size || 0;
-          const { add_count: addCount, remove_count: removeCount, dropout_count: dropoutCount } = dailyStat[date];
+          const {
+            add_count: addCount,
+            remove_count: removeCount,
+            dropout_count: dropoutCount,
+            dropout_time: dropoutTime,
+          } = dailyStat[date];
+
+          if (dropoutTime > 0) {
+            totalDayDropoutTime += dropoutTime;
+            totalDayDropoutTimeCount++;
+          }
+
           dailyOutput.push(
             ` ${groupInfo.group_name.padEnd(maxGroupNameLength)} | ${groupInfo.group_size
               .toString()
               .padEnd(7)} | ${addCount.toString().padEnd(8)} | ${removeCount.toString().padEnd(6)} | ${dropoutCount
               .toString()
-              .padEnd(9)} | ${addCount - removeCount > 0 ? "+" : ""}${(addCount - removeCount)
-              .toString()
-              .padEnd(addCount - removeCount > 0 ? 4 : 5)} | ${
+              .padEnd(12)} | ${formatMillisecondsToTime(dropoutTime).padEnd(12)} | ${
+              addCount - removeCount > 0 ? "+" : ""
+            }${(addCount - removeCount).toString().padEnd(addCount - removeCount > 0 ? 4 : 5)} | ${
               addCount > 0 ? Math.floor(((addCount - dropoutCount) / addCount) * 100) : 0
             }%`
           );
+
           totalDayAdd += addCount;
           totalDayRemove += removeCount;
           totalDayDropout += dropoutCount;
@@ -127,59 +144,70 @@ export function printStatistics() {
       });
 
     if (hasGroupData) {
+      const averageDayDropoutTime =
+        totalDayDropout > 0 && totalDayDropoutTimeCount > 0 ? totalDayDropoutTime / totalDayDropoutTimeCount : 0;
+      const formattedDayDropoutTime = formatMillisecondsToTime(averageDayDropoutTime);
+
       consoleLogColor(`\n📅 ${formattedDate}`, ConsoleColors.YELLOW, false, true);
-      consoleLogColor("-".repeat(maxGroupNameLength + 63), ConsoleColors.RESET, false, true);
+      consoleLogColor("-".repeat(maxGroupNameLength + 80), ConsoleColors.RESET, false, true);
       consoleLogColor(
-        " Grupo".padEnd(maxGroupNameLength + 2) + "| Membros | Entradas | Saídas | Abandonos | Saldo | Retenção",
+        " Grupo".padEnd(maxGroupNameLength + 2) +
+          "| Membros | Entradas | Saídas | Desistências | Permanência | Saldo | Retenção",
         ConsoleColors.BRIGHT,
         false,
         true
       );
-      consoleLogColor("-".repeat(maxGroupNameLength + 63), ConsoleColors.RESET, false, true);
+      consoleLogColor("-".repeat(maxGroupNameLength + 80), ConsoleColors.RESET, false, true);
 
       dailyOutput.forEach((line) => consoleLogColor(line, ConsoleColors.RESET, false, true));
 
-      consoleLogColor("-".repeat(maxGroupNameLength + 63), ConsoleColors.RESET, false, true);
+      consoleLogColor("-".repeat(maxGroupNameLength + 80), ConsoleColors.RESET, false, true);
       consoleLogColor(
         " Totais do dia".padEnd(maxGroupNameLength + 2) +
           `| ${totalDateParticipants.toString().padEnd(7)} | ${totalDayAdd.toString().padEnd(8)} | ${totalDayRemove
             .toString()
-            .padEnd(6)} | ${totalDayDropout.toString().padEnd(9)} | ${totalDayAdd - totalDayRemove > 0 ? "+" : ""}${(
-            totalDayAdd - totalDayRemove
-          )
-            .toString()
-            .padEnd(totalDayAdd - totalDayRemove > 0 ? 4 : 5)} | ${Math.floor(
-            ((totalDayAdd - totalDayDropout) / totalDayAdd) * 100
-          )}%`,
+            .padEnd(6)} | ${totalDayDropout.toString().padEnd(12)} | ${formattedDayDropoutTime.padEnd(12)} | ${
+            totalDayAdd - totalDayRemove > 0
+              ? ("+" + (totalDayAdd - totalDayRemove).toString()).padEnd(5)
+              : (totalDayAdd - totalDayRemove).toString().padEnd(5)
+          } | ${Math.floor(((totalDayAdd - totalDayDropout) / totalDayAdd) * 100)}%`,
         ConsoleColors.YELLOW,
         false,
         true
       );
-      consoleLogColor("-".repeat(maxGroupNameLength + 63), ConsoleColors.RESET, false, true);
+      consoleLogColor("-".repeat(maxGroupNameLength + 80), ConsoleColors.RESET, false, true);
+
       totalMonthAdd += totalDayAdd;
       totalMonthRemove += totalDayRemove;
       totalMonthDropout += totalDayDropout;
+
+      totalDropoutTime += averageDayDropoutTime;
+      totalDropoutCount = totalDayDropout > 0 ? totalDropoutCount + 1 : totalDropoutCount;
     }
   });
 
   const totalMonthBalance = totalMonthAdd - totalMonthRemove;
-  const labelWidth = 15;
+  const labelWidth = 18;
 
   const formatLine = (label, value) => `${label.padEnd(labelWidth)}${value}`;
 
-  consoleLogColor("\n====================", ConsoleColors.RESET, false, true);
+  consoleLogColor("\n============================", ConsoleColors.RESET, false, true);
   consoleLogColor("📊 Resumo 30 dias \n", ConsoleColors.BRIGHT, false, true);
 
   consoleLogColor(formatLine("🏠 Grupos:", totalGroups), ConsoleColors.BRIGHT, false, true);
   consoleLogColor(formatLine("👤 Membros:", totalParticipants), ConsoleColors.BRIGHT, false, true);
 
-  consoleLogColor(`--------------------`, ConsoleColors.BRIGHT, false, true);
+  consoleLogColor(`----------------------------`, ConsoleColors.BRIGHT, false, true);
 
   consoleLogColor(formatLine("🟢 Entradas:", totalMonthAdd), ConsoleColors.GREEN, false, true);
   consoleLogColor(formatLine("🔴 Saídas:", totalMonthRemove), ConsoleColors.RED, false, true);
-  consoleLogColor(formatLine("🟡 Abandonos:", totalMonthDropout), ConsoleColors.YELLOW, false, true);
+  consoleLogColor(formatLine("🟡 Desistências:", totalMonthDropout), ConsoleColors.YELLOW, false, true);
 
-  consoleLogColor(`--------------------`, ConsoleColors.BRIGHT, false, true);
+  const averageTotalDropoutTime =
+    totalDropoutCount > 0 ? formatMillisecondsToTime(totalDropoutTime / totalDropoutCount) : "-";
+  consoleLogColor(formatLine(`⏱  Permanência:`, averageTotalDropoutTime), ConsoleColors.BRIGHT, false, true);
+
+  consoleLogColor(`----------------------------`, ConsoleColors.BRIGHT, false, true);
 
   const balanceLabel = totalMonthBalance > 0 ? "🔼 Expansão:" : totalMonthBalance < 0 ? "🔽 Retração:" : "⚖️ Saldo:";
   consoleLogColor(
@@ -199,7 +227,7 @@ export function printStatistics() {
     true
   );
 
-  consoleLogColor("====================\n", ConsoleColors.RESET, false, true);
+  consoleLogColor("============================\n", ConsoleColors.RESET, false, true);
 }
 
 /**
@@ -216,32 +244,36 @@ export function getStatistics(days, isDetailed) {
     days = Math.floor(days);
   }
 
-  let groupsById, datesToShow, maxGroupNameLength;
+  let groupsById, datesToShow;
   try {
     const processed = loadAndProcessStatistics(days, true);
     groupsById = processed.groupsById;
     datesToShow = processed.datesToShow;
-    maxGroupNameLength = processed.maxGroupNameLength;
   } catch (error) {
     return `❌ ${error.message}`;
   }
 
   const totalGroups = Object.keys(groupsById).length;
-  let totalMonthAdd = 0;
-  let totalMonthRemove = 0;
-  let totalMonthDropout = 0;
+  let totalPeriodAdd = 0;
+  let totalPeriodRemove = 0;
+  let totalPeriodDropout = 0;
+  let totalDropoutTime = 0;
+  let totalDropoutCount = 0;
   let totalParticipants = 0;
+
   for (const groupId in groupsById) {
     totalParticipants += groupsById[groupId]?.group_size || 0;
   }
 
   let statisticsMessage = "";
-
   let hasAnyGroupData = false;
+
   datesToShow.forEach((date) => {
     let totalDayAdd = 0;
     let totalDayRemove = 0;
     let totalDayDropout = 0;
+    let totalDayDropoutTime = 0;
+    let totalDayDropoutTimeCount = 0;
     let hasGroupData = false;
     let dailyOutput = [];
 
@@ -255,9 +287,28 @@ export function getStatistics(days, isDetailed) {
         const dailyStat = groupInfo.statistics.find((stat) => stat[date]);
         if (dailyStat) {
           totalDateParticipants += groupInfo.group_size || 0;
-          const { add_count: addCount, remove_count: removeCount, dropout_count: dropoutCount } = dailyStat[date];
+          const {
+            add_count: addCount,
+            remove_count: removeCount,
+            dropout_count: dropoutCount,
+            dropout_time: dropoutTime,
+          } = dailyStat[date];
           const balance = addCount - removeCount;
           const retention = addCount > 0 ? Math.floor(((addCount - dropoutCount) / addCount) * 100) : 0;
+
+          totalDayAdd += addCount;
+          totalDayRemove += removeCount;
+          totalDayDropout += dropoutCount;
+          if (dropoutTime > 0) {
+            totalDayDropoutTime += dropoutTime;
+          }
+          if (dropoutCount > 0) {
+            totalDayDropoutTimeCount++;
+          }
+          hasGroupData = true;
+          hasAnyGroupData = true;
+
+          const formattedGroupDropoutTime = formatMillisecondsToTime(dropoutCount > 0 ? dropoutTime : 0);
 
           let balanceEmoji = "⚖️";
           if (balance > 0) {
@@ -269,15 +320,10 @@ export function getStatistics(days, isDetailed) {
           dailyOutput.push(
             `${balanceEmoji} *${groupInfo.group_name}*\n  ↳ Membros: ${
               groupInfo.group_size
-            }\n  ↳ Entradas: ${addCount}\n  ↳ Saídas: ${removeCount}\n  ↳ Abandonos: ${dropoutCount}\n  ↳ Saldo: ${
-              balance > 0 ? "+" : ""
-            }${balance}\n  ↳ Retenção: ${retention}%`
+            }\n  ↳ Entradas: ${addCount}\n  ↳ Saídas: ${removeCount}\n  ↳ Desistências: ${dropoutCount}${
+              dropoutTime > 0 ? "\n  ↳ Permanência: " + formattedGroupDropoutTime : ""
+            }\n  ↳ Saldo: ${balance > 0 ? "+" : ""}${balance}\n  ↳ Retenção: ${retention}%\n`
           );
-          totalDayAdd += addCount;
-          totalDayRemove += removeCount;
-          totalDayDropout += dropoutCount;
-          hasGroupData = true;
-          hasAnyGroupData = true;
         }
       });
 
@@ -291,11 +337,14 @@ export function getStatistics(days, isDetailed) {
     }
 
     if (hasGroupData) {
+      const averageDayDropoutTime = totalDayDropout > 0 ? totalDayDropoutTime / totalDayDropoutTimeCount : 0;
+      const formattedDayDropoutTime = formatMillisecondsToTime(averageDayDropoutTime);
+
       statisticsMessage += `---------------------------------\n`;
       statisticsMessage += `*🗓 ${formattedDate}*\n`;
-      statisticsMessage += `*${totalDayEmoji} Totais do dia:*\n  ↳ Membros: ${totalDateParticipants}\n  ↳ Entradas: ${totalDayAdd}\n  ↳ Saídas: ${totalDayRemove}\n  ↳ Abandonos: ${totalDayDropout}\n  ↳ Saldo: ${
-        totalDayBalance > 0 ? "+" : ""
-      }${totalDayBalance}\n  ↳ Retenção: ${
+      statisticsMessage += `*${totalDayEmoji} Totais do dia:*\n  ↳ Membros: ${totalDateParticipants}\n  ↳ Entradas: ${totalDayAdd}\n  ↳ Saídas: ${totalDayRemove}\n  ↳ Desistências: ${totalDayDropout}${
+        averageDayDropoutTime > 0 ? "\n  ↳ Permanência: " + formattedDayDropoutTime : ""
+      }\n  ↳ Saldo: ${totalDayBalance > 0 ? "+" : ""}${totalDayBalance}\n  ↳ Retenção: ${
         totalDayAdd > 0 ? Math.floor(((totalDayAdd - totalDayDropout) / totalDayAdd) * 100) : 0
       }%\n\n`;
       if (isDetailed) {
@@ -303,13 +352,18 @@ export function getStatistics(days, isDetailed) {
           statisticsMessage += `${line}\n`;
         });
       }
-      totalMonthAdd += totalDayAdd;
-      totalMonthRemove += totalDayRemove;
-      totalMonthDropout += totalDayDropout;
+
+      totalPeriodAdd += totalDayAdd;
+      totalPeriodRemove += totalDayRemove;
+      totalPeriodDropout += totalDayDropout;
+      totalDropoutTime += averageDayDropoutTime;
+      totalDropoutCount = totalDayDropout > 0 ? totalDropoutCount + 1 : totalDropoutCount;
     }
   });
 
-  const totalPeriodBalance = totalMonthAdd - totalMonthRemove;
+  const totalPeriodBalance = totalPeriodAdd - totalPeriodRemove;
+  const averageTotalDropoutTime = totalDropoutCount > 0 ? totalDropoutTime / totalDropoutCount : 0;
+  const formattedTotalDropoutTime = formatMillisecondsToTime(averageTotalDropoutTime);
 
   let totalPeriodMessage = "*Estatísticas dos grupos*\n";
   if (isDetailed) {
@@ -321,15 +375,16 @@ export function getStatistics(days, isDetailed) {
   totalPeriodMessage += `🏘 Grupos: ${totalGroups}\n`;
   totalPeriodMessage += `👤 Membros: ${totalParticipants}\n`;
   totalPeriodMessage += `---------------------------------\n`;
-  totalPeriodMessage += `🟢 *Entradas:* ${totalMonthAdd}\n`;
-  totalPeriodMessage += `🔴 *Saídas:* ${totalMonthRemove}\n`;
-  totalPeriodMessage += `🟡 *Abandonos:* ${totalMonthDropout}\n`;
+  totalPeriodMessage += `🟢 *Entradas:* ${totalPeriodAdd}\n`;
+  totalPeriodMessage += `🔴 *Saídas:* ${totalPeriodRemove}\n`;
+  totalPeriodMessage += `🟡 *Desistências:* ${totalPeriodDropout}\n`;
+  totalPeriodMessage += `⏱ *Permanência:* ${formattedTotalDropoutTime}\n`;
   totalPeriodMessage += `---------------------------------\n`;
   totalPeriodMessage += `${
     totalPeriodBalance > 0 ? "🔼 *Expansão:* +" : totalPeriodBalance < 0 ? "🔽 *Retração:* " : "⚖️ *Saldo:* "
   }${totalPeriodBalance}\n`;
   totalPeriodMessage += `🔒 *Retenção:* ${
-    totalMonthAdd > 0 ? Math.floor(((totalMonthAdd - totalMonthDropout) / totalMonthAdd) * 100) : 0
+    totalPeriodAdd > 0 ? Math.floor(((totalPeriodAdd - totalPeriodDropout) / totalPeriodAdd) * 100) : 0
   }%\n`;
 
   statisticsMessage =
@@ -343,7 +398,9 @@ export function getStatistics(days, isDetailed) {
 export async function updateGroupStatistics(groupUpdateData, groupName, groupSize) {
   const groupId = groupUpdateData.id.replace("@g.us", "");
   const participantId = groupUpdateData.participants[0]?.replace("@s.whatsapp.net", "");
-  const currentDate = new Date().toISOString().split("T")[0];
+  const now = new Date();
+  const localDate = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+  const currentDate = localDate.toISOString().split("T")[0];
   const nowISOString = new Date().toISOString();
 
   const __filename = fileURLToPath(import.meta.url);
@@ -370,6 +427,7 @@ export async function updateGroupStatistics(groupUpdateData, groupName, groupSiz
                   add_count: 0,
                   remove_count: 0,
                   dropout_count: 0,
+                  dropout_time: 0,
                 },
               },
             ]
@@ -394,7 +452,7 @@ export async function updateGroupStatistics(groupUpdateData, groupName, groupSiz
 
   let dailyStats = groupInfo.statistics.find((stat) => stat[currentDate]);
   if (!dailyStats) {
-    dailyStats = { [currentDate]: { add_count: 0, remove_count: 0, dropout_count: 0 } };
+    dailyStats = { [currentDate]: { add_count: 0, remove_count: 0, dropout_count: 0, dropout_time: 0 } };
     groupInfo.statistics.push(dailyStats);
   }
 
@@ -404,12 +462,34 @@ export async function updateGroupStatistics(groupUpdateData, groupName, groupSiz
     if (groupUpdateData.action === "remove") {
       groupInfo.group_size--;
       if (!existingMember[participantId].remove_datetime) {
-        existingMember[participantId].remove_datetime = nowISOString;
         dailyStats[currentDate].remove_count += 1;
+        existingMember[participantId].remove_datetime = nowISOString;
 
         const addDate = new Date(existingMember[participantId].add_datetime);
-        if (new Date() - addDate < 24 * 60 * 60 * 1000) {
+        const removeDate = new Date(existingMember[participantId].remove_datetime);
+        if (removeDate - addDate < 24 * 60 * 60 * 1000) {
           dailyStats[currentDate].dropout_count += 1;
+
+          const validDropouts = groupInfo.today_members.filter((member) => {
+            const memberId = Object.keys(member)[0];
+            const addTime = new Date(member[memberId].add_datetime);
+            const removeTime = new Date(member[memberId].remove_datetime);
+            return removeTime && addTime && removeTime - addTime < 24 * 60 * 60 * 1000;
+          });
+
+          const totalDropoutTime = validDropouts.reduce((total, member) => {
+            const memberId = Object.keys(member)[0];
+            const addTime = new Date(member[memberId].add_datetime);
+            const removeTime = new Date(member[memberId].remove_datetime);
+            return total + (removeTime - addTime);
+          }, 0);
+
+          dailyStats[currentDate].dropout_time = totalDropoutTime / validDropouts.length || 0;
+        } else {
+          const memberIndex = groupInfo.today_members.indexOf(existingMember);
+          if (memberIndex !== -1) {
+            groupInfo.today_members.splice(memberIndex, 1);
+          }
         }
       }
     } else {
@@ -451,8 +531,27 @@ export async function startupAllGroups(allGroupInfo) {
     const groupId = uptodateGroup.groupId;
     const existingGroupIndex = groupsStatistics.findIndex((stat) => Object.keys(stat)[0] === groupId);
     const existingGroup = existingGroupIndex !== -1 ? groupsStatistics[existingGroupIndex][groupId] : null;
-    existingGroup.group_name = uptodateGroup.groupName;
-    existingGroup.group_size = uptodateGroup.groupSize;
+    if (existingGroup) {
+      existingGroup.group_name = uptodateGroup.groupName;
+      existingGroup.group_size = uptodateGroup.groupSize;
+      for (const stat of existingGroup.statistics) {
+        for (const date in stat) {
+          if (!stat[date].hasOwnProperty("dropout_time")) {
+            stat[date].dropout_time = 0;
+          }
+        }
+      }
+    } else {
+      const newGroupData = {
+        [groupId]: {
+          group_name: uptodateGroup.groupName,
+          group_size: uptodateGroup.groupSize,
+          statistics: [],
+          today_members: [],
+        },
+      };
+      groupsStatistics.push(newGroupData);
+    }
   }
 
   try {

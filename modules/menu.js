@@ -2,10 +2,10 @@ import { ConsoleColors, ImageAspects, SendMethods } from "./constants.js";
 import { consoleLogColor } from "./utils.js";
 import { Config, showCurrentConfig, saveConfig } from "./config.js";
 import { printStatistics } from "./statistics.js";
-import { setMenuState } from "./utils.js"; // Import the function
+import { setMenuState } from "./utils.js";
 
 export async function showMainMenu(rl) {
-  setMenuState(true); // Set menu state to open
+  setMenuState(true);
   let exitMenu = false;
   while (!exitMenu) {
     displayMenuOptions();
@@ -18,20 +18,19 @@ export async function showMainMenu(rl) {
     );
     exitMenu = await handleMenuOption(option, rl);
   }
-  setMenuState(false); // Set menu state to closed
+  setMenuState(false);
   return true;
 }
 
 function askQuestion(rl, question) {
   return new Promise((resolve) => {
-    // Removed reject
     const timeout = setTimeout(() => {
-      rl.write("0\n"); // Simulates typing "0" and sends
+      rl.write("0\n");
       consoleLogColor("Tempo excedido, menu encerrado.", ConsoleColors.YELLOW, false, true);
     }, 30000);
 
     rl.question(question, (answer) => {
-      clearTimeout(timeout); // Clears the timeout if the user responds in time
+      clearTimeout(timeout);
       resolve(answer);
     });
   });
