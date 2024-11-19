@@ -1,9 +1,32 @@
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import sharp from "sharp";
-const appDirectoryName = path.basename(process.cwd());
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+function manageProcessPID() {
+  const filePath = path.join(__dirname, "./modules/pid.log");
 
+  try {
+    if (fs.existsSync(filePath)) {
+      const pidContent = fs.readFileSync(filePath, "utf8").trim();
+
+      if (pidContent && !isNaN(pidContent)) {
+        const oldPID = parseInt(pidContent, 10);
+        try {
+          process.kill(oldPID, "SIGTERM");
+          consoleLogColor(`Processo anterior (PID: ${oldPID}) encerrado.`, ConsoleColors.YELLOW);
+        } catch (err) {
+          // consoleLogColor(`Falha ao encerrar o processo anterior (PID: ${oldPID}):`, ConsoleColors.RED);
+        }
+      }
+    }
+
+    fs.writeFileSync(filePath, process.pid.toString(), "utf8");
+  } catch (err) {
+    // console.error("Erro ao gerenciar o PID:", err);
+  }
+}
+manageProcessPID();
 import readline from "readline";
 import {
   makeWASocket,
@@ -16,8 +39,10 @@ import { consoleLogColor, fetchWhatsAppVersion, deepEqual } from "./modules/util
 import { showMainMenu } from "./modules/menu.js";
 import { Config, saveConfig, SessionStats } from "./modules/config.js";
 import { updateGroupStatistics, getStatistics, startupAllGroups } from "./modules/statistics.js";
+import sharp from "sharp";
 import pino from "pino";
 
+const appDirectoryName = path.basename(process.cwd());
 process.stdout.write(`\x1b]2;${appDirectoryName} - ${Config.OWN_NUMBER}\x07`);
 
 let rl;
@@ -121,8 +146,6 @@ async function clearAllFiles(directory) {
 
 async function saveErrorLog(logMessage) {
   try {
-    const __filename = fileURLToPath(import.meta.url);
-    const __dirname = path.dirname(__filename);
     const logFilePath = path.join(__dirname, "./modules/errors.log");
     const errorMessage = `[${new Date().toLocaleString()}] ${logMessage}\n`;
 

@@ -1,6 +1,8 @@
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 import { ConsoleColors, SendMethods, ImageAspects } from "./constants.js";
 import { consoleLogColor } from "./utils.js";
 
@@ -26,8 +28,6 @@ const SessionStats = {
 
 export function loadConfig() {
   try {
-    const __filename = fileURLToPath(import.meta.url);
-    const __dirname = path.dirname(__filename);
     const configPath = path.join(__dirname, "./config.json");
     const data = fs.readFileSync(configPath, "utf8");
     Config = JSON.parse(data);
@@ -50,7 +50,7 @@ Pausa entre Grupos: ${Config.DELAY_BETWEEN_GROUPS} segundos
 Pausa entre Mensagens: ${Config.DELAY_BETWEEN_MESSAGES} segundos
 Números Autorizados: ${Config.AUTHORIZED_NUMBERS.length}
 Palavras-chave para grupos: ${Config.GROUP_NAME_KEYWORDS.length}
-Registro de estatísticas de grupos: ${Config.GROUP_STATISTICS ? "Ativado" : "Desativado"}
+Estatísticas de grupos: ${Config.GROUP_STATISTICS ? "Ativado" : "Desativado"}
 `;
     consoleLogColor(configSummary, ConsoleColors.CYAN, false);
     return Config;
@@ -97,8 +97,6 @@ function validateConfig() {
 
 export function saveConfig() {
   try {
-    const __filename = fileURLToPath(import.meta.url);
-    const __dirname = path.dirname(__filename);
     const configPath = path.join(__dirname, "./config.json");
     fs.writeFileSync(configPath, JSON.stringify(Config, null, 2), "utf8");
   } catch (err) {
@@ -150,7 +148,7 @@ Pausa entre mensagens: ${Config.DELAY_BETWEEN_MESSAGES} segundos
 Números autorizados: ${Config.AUTHORIZED_NUMBERS.length}
 Palavras-chave para grupos: ${Config.GROUP_NAME_KEYWORDS.length}
 Grupos carregados para envio: ${SessionStats.totalGroups}
-Registro de estatísticas de grupos: ${Config.GROUP_STATISTICS ? "Ativado" : "Desativado"}`;
+Estatísticas de grupos: ${Config.GROUP_STATISTICS ? "Ativado" : "Desativado"}`;
 
   consoleLogColor(configFormatted, ConsoleColors.CYAN, false, true);
 }

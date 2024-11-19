@@ -1,6 +1,8 @@
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 import { consoleLogColor, formatMillisecondsToTime } from "./utils.js";
 import { ConsoleColors } from "./constants.js";
 
@@ -10,8 +12,6 @@ import { ConsoleColors } from "./constants.js";
  */
 function loadAndProcessStatistics(days, reverse) {
   let daysToCalculate = days > 0 ? days : 1;
-  const __filename = fileURLToPath(import.meta.url);
-  const __dirname = path.dirname(__filename);
   const groupsStatisticsPath = path.join(__dirname, "./statistics.json");
 
   let groupsStatistics;
@@ -392,7 +392,7 @@ export function getStatistics(days, isDetailed) {
       ? totalPeriodMessage + `\n\n📊 *Detalhamento*\n` + statisticsMessage
       : totalPeriodMessage;
 
-  return statisticsMessage;
+  return statisticsMessage.replace(/\n+$/, "");
 }
 
 export async function updateGroupStatistics(groupUpdateData, groupName, groupSize) {
@@ -403,8 +403,6 @@ export async function updateGroupStatistics(groupUpdateData, groupName, groupSiz
   const currentDate = localDate.toISOString().split("T")[0];
   const nowISOString = new Date().toISOString();
 
-  const __filename = fileURLToPath(import.meta.url);
-  const __dirname = path.dirname(__filename);
   const groupsStatisticsPath = path.join(__dirname, "./statistics.json");
   let groupsStatistics;
   try {
@@ -512,15 +510,23 @@ export async function updateGroupStatistics(groupUpdateData, groupName, groupSiz
 }
 
 export async function startupAllGroups(allGroupInfo) {
-  const __filename = fileURLToPath(import.meta.url);
-  const __dirname = path.dirname(__filename);
   const groupsStatisticsPath = path.join(__dirname, "./statistics.json");
   let groupsStatistics;
   try {
     const data = fs.readFileSync(groupsStatisticsPath, "utf8");
     groupsStatistics = JSON.parse(data);
   } catch (error) {
-    return;
+    if (error.code === "ENOENT") {
+      try {
+        fs.writeFileSync(groupsStatisticsPath, "[]", { flag: "wx" });
+        groupsStatistics = [];
+      } catch (writeError) {
+        console.error("Erro ao criar o arquivo:", writeError);
+      }
+    } else {
+      console.error("Erro ao ler o arquivo:", error);
+      return;
+    }
   }
 
   const validGroupIds = new Set(allGroupInfo.map((group) => group.groupId));

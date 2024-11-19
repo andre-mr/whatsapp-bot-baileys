@@ -90,13 +90,13 @@ export function formatMillisecondsToTime(milliseconds) {
   if (hours > 0 && minutes === 0 && seconds === 0) {
     return `${hours}h`;
   } else if (hours > 0 && seconds === 0) {
-    return `${hours}h${minutes}m`;
+    return `${hours}h ${minutes}m`;
   } else if (hours > 0) {
-    return `${hours}h${minutes}m${seconds}s`;
+    return `${hours}h ${minutes}m ${seconds}s`;
   } else if (minutes > 0 && seconds === 0) {
     return `${minutes}m`;
   } else if (minutes > 0) {
-    return `${minutes}m${seconds}s`;
+    return `${minutes}m ${seconds}s`;
   } else {
     return `${seconds}s`;
   }

@@ -4,3 +4,4 @@
 /modules/config.json
 /modules/statistics.json
 /modules/errors.log
+/modules/pid.log
