@@ -1,7 +1,8 @@
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-const __filename = fileURLToPath(import.meta.url);
+const __filename =
+  typeof import.meta !== "undefined" && import.meta.url ? fileURLToPath(import.meta.url) : process.argv[1];
 const __dirname = path.dirname(__filename);
 import { ConsoleColors, SendMethods, ImageAspects } from "./constants.js";
 import { consoleLogColor } from "./utils.js";
@@ -9,6 +10,7 @@ import { consoleLogColor } from "./utils.js";
 const defaultConfig = {
   AUTHORIZED_NUMBERS: [],
   GROUP_NAME_KEYWORDS: [],
+  LINK_TRACKING_DOMAINS: [],
   GROUP_STATISTICS: false,
   DEFAULT_SEND_METHOD: SendMethods.FORWARD,
   IMAGE_ASPECT: ImageAspects.ORIGINAL,
@@ -50,6 +52,7 @@ Pausa entre Grupos: ${Config.DELAY_BETWEEN_GROUPS} segundos
 Pausa entre Mensagens: ${Config.DELAY_BETWEEN_MESSAGES} segundos
 Números Autorizados: ${Config.AUTHORIZED_NUMBERS.length}
 Palavras-chave para grupos: ${Config.GROUP_NAME_KEYWORDS.length}
+Rastreamento de links: ${Config.LINK_TRACKING_DOMAINS.length > 0 ? "Ativado" : "Desativado"}
 Estatísticas de grupos: ${Config.GROUP_STATISTICS ? "Ativado" : "Desativado"}
 `;
     consoleLogColor(configSummary, ConsoleColors.CYAN, false);
@@ -60,6 +63,7 @@ Estatísticas de grupos: ${Config.GROUP_STATISTICS ? "Ativado" : "Desativado"}
     Config = {
       AUTHORIZED_NUMBERS: [],
       GROUP_NAME_KEYWORDS: [],
+      LINK_TRACKING_DOMAINS: [],
       GROUP_STATISTICS: false,
       DEFAULT_SEND_METHOD: SendMethods.FORWARD,
       IMAGE_ASPECT: ImageAspects.ORIGINAL,
@@ -147,6 +151,7 @@ Pausa entre grupos: ${Config.DELAY_BETWEEN_GROUPS} segundos
 Pausa entre mensagens: ${Config.DELAY_BETWEEN_MESSAGES} segundos
 Números autorizados: ${Config.AUTHORIZED_NUMBERS.length}
 Palavras-chave para grupos: ${Config.GROUP_NAME_KEYWORDS.length}
+Rastreamento de links: ${Config.LINK_TRACKING_DOMAINS.length > 0 ? "Ativado" : "Desativado"}
 Grupos carregados para envio: ${SessionStats.totalGroups}
 Estatísticas de grupos: ${Config.GROUP_STATISTICS ? "Ativado" : "Desativado"}`;
 

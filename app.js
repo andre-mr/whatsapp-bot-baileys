@@ -1,8 +1,10 @@
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-const __filename = fileURLToPath(import.meta.url);
+const __filename =
+  typeof import.meta !== "undefined" && import.meta.url ? fileURLToPath(import.meta.url) : process.argv[1];
 const __dirname = path.dirname(__filename);
+
 function manageProcessPID() {
   const filePath = path.join(__dirname, "./modules/pid.log");
 
@@ -52,6 +54,7 @@ let lastGroupIndex = 0;
 let GroupMetadataCache = {};
 let isSending = false;
 let sock;
+let state, saveCreds, currentVersion;
 
 process.on("uncaughtException", async (error) => {
   const errorMessage = error?.message || "desconhecido";
@@ -164,9 +167,6 @@ function handleDisconnect(reconnectMessage) {
     sock.end(new Error(reconnectMessage || "Fechamento manual"));
   }
 }
-
-let { state, saveCreds } = await useMultiFileAuthState("auth");
-const currentVersion = await getWhatsAppVersion();
 
 async function getWhatsAppVersion() {
   const latestVersionCustom = await fetchWhatsAppVersion();
@@ -551,8 +551,8 @@ async function runWhatsAppBot() {
 
             sendReportMessage(sock, sender, statsMessage, waMessage);
           }
-        } else {
-          if (messageContent.length > 20) {
+        } else if (messageContent.length > 20 && messageContent.includes("http")) {
+          {
             consoleLogColor(`Mensagem ${waMessage.key.id} recebida de: ${formattedNumber}`, ConsoleColors.YELLOW);
             const messageExistsInPool =
               MessagePool.length > 0 &&
@@ -626,6 +626,42 @@ async function runWhatsAppBot() {
     isSending = true;
     let messagesSentInCurrentBatch = 0;
 
+    function normalizeGroupName(groupName) {
+      let normalized = groupName.toLowerCase();
+      normalized = normalized.replace(/^[0-9]+\s*/, "");
+      normalized = normalized.trim();
+      normalized = normalized.replace(/\s+/g, "-");
+      return normalized;
+    }
+
+    function modifyMessageLinks(messageContent, groupNameNormalized) {
+      if (!messageContent) return messageContent;
+      const domains = Config.LINK_TRACKING_DOMAINS || [];
+      const urlRegex = /https?:\/\/[^\s]+/g;
+
+      return messageContent.replace(urlRegex, (url) => {
+        try {
+          const lowerUrl = url.toLowerCase();
+          const domainFound = domains.find((d) => lowerUrl.includes(d.toLowerCase()));
+          if (!domainFound) return url;
+
+          const urlObj = new URL(url);
+
+          if (!urlObj.searchParams.has("utm_source")) {
+            urlObj.searchParams.append("utm_source", "whatsapp");
+          }
+
+          if (!urlObj.searchParams.has("utm_medium")) {
+            urlObj.searchParams.append("utm_medium", groupNameNormalized);
+          }
+
+          return urlObj.toString();
+        } catch (e) {
+          return url;
+        }
+      });
+    }
+
     while (MessagePool.length > 0) {
       let currentSendMethod = Config.DEFAULT_SEND_METHOD;
       const waMessage = MessagePool.shift();
@@ -698,6 +734,15 @@ async function runWhatsAppBot() {
         const chatId = groupIds[i];
         const chat = GroupMetadataCache[chatId];
 
+        const groupNameNormalized = normalizeGroupName(chat.subject);
+
+        let finalContent;
+        if (currentSendMethod === SendMethods.IMAGE && imageCaption) {
+          finalContent = modifyMessageLinks(imageCaption, groupNameNormalized);
+        } else {
+          finalContent = modifyMessageLinks(originalMessageContent, groupNameNormalized);
+        }
+
         try {
           switch (currentSendMethod) {
             case SendMethods.FORWARD:
@@ -708,13 +753,13 @@ async function runWhatsAppBot() {
               break;
 
             case SendMethods.IMAGE:
-              await handleImageSend();
+              await handleImageSend(finalContent);
               break;
 
             default:
               await handleSendMethod(() => {
                 return sock.sendMessage(chat.id, {
-                  text: waMessage?.message?.extendedTextMessage?.text || waMessage.message?.conversation,
+                  text: finalContent,
                 });
               });
               break;
@@ -737,12 +782,12 @@ async function runWhatsAppBot() {
           }
         }
 
-        async function handleImageSend() {
+        async function handleImageSend(finalContentCaption) {
           await handleSendMethod(() => {
             return sock
               .sendMessage(chatId, {
                 image: imageBuffer,
-                caption: imageCaption,
+                caption: finalContentCaption,
                 mimetype: "image/jpeg",
                 jpegThumbnail: thumbnailBufferBase64,
               })
@@ -828,6 +873,9 @@ async function runWhatsAppBot() {
 
 const startApp = async () => {
   await clearOldFiles("./auth", 2);
+
+  ({ state, saveCreds } = await useMultiFileAuthState("auth"));
+  currentVersion = await getWhatsAppVersion();
   setupInputListener();
   runWhatsAppBot();
 };

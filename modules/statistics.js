@@ -1,7 +1,8 @@
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-const __filename = fileURLToPath(import.meta.url);
+const __filename =
+  typeof import.meta !== "undefined" && import.meta.url ? fileURLToPath(import.meta.url) : process.argv[1];
 const __dirname = path.dirname(__filename);
 import { consoleLogColor, formatMillisecondsToTime } from "./utils.js";
 import { ConsoleColors } from "./constants.js";

@@ -46,8 +46,9 @@ function displayMenuOptions() {
     "4. Pausa entre mensagens",
     "5. Números autorizados",
     "6. Palavras-chave para grupos",
-    "7. Estatísticas de grupos",
-    "8. Mostrar configurações",
+    "7. Rastreamento de links",
+    "8. Estatísticas de grupos",
+    "9. Mostrar configurações",
     "0. Sair do menu",
   ];
   consoleLogColor(menuOptions.join("\n"), ConsoleColors.BRIGHT, false, true);
@@ -80,10 +81,14 @@ async function handleMenuOption(option, rl) {
       return false;
 
     case "7":
-      await groupStatistics(rl);
+      await modifyArrayOption("LINK_TRACKING_DOMAINS", rl);
       return false;
 
     case "8":
+      await groupStatistics(rl);
+      return false;
+
+    case "9":
       showCurrentConfig();
       return false;
 
@@ -317,7 +322,12 @@ function modifyDelayBetweenMessages(rl) {
 
 function modifyArrayOption(option, rl) {
   return new Promise((resolve) => {
-    const optionName = option === "AUTHORIZED_NUMBERS" ? "Números autorizados" : "Palavras-chave para grupos";
+    const optionName =
+      option === "AUTHORIZED_NUMBERS"
+        ? "Números autorizados"
+        : option === "GROUP_NAME_KEYWORDS"
+        ? "Palavras-chave para grupos"
+        : "Domínios para rastreamento de links";
     consoleLogColor(
       `\n${optionName}: ${Config[option].map((item) => `"${item}"`).join(", ")}\n`,
       ConsoleColors.CYAN,
