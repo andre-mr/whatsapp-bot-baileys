@@ -467,23 +467,36 @@ export async function updateGroupStatistics(groupUpdateData, groupName, groupSiz
         const addDate = new Date(existingMember[participantId].add_datetime);
         const removeDate = new Date(existingMember[participantId].remove_datetime);
         if (removeDate - addDate < 24 * 60 * 60 * 1000) {
-          dailyStats[currentDate].dropout_count += 1;
+          const addDatetime = new Date(existingMember[participantId].add_datetime);
+          const addLocalDate = new Date(addDatetime.getTime() - addDatetime.getTimezoneOffset() * 60000);
+          const entryDate = addLocalDate.toISOString().split("T")[0];
+
+          let entryDayStats = groupInfo.statistics.find((stat) => stat[entryDate]);
+          if (!entryDayStats) {
+            entryDayStats = { [entryDate]: { add_count: 0, remove_count: 0, dropout_count: 0, dropout_time: 0 } };
+            groupInfo.statistics.push(entryDayStats);
+          }
+
+          entryDayStats[entryDate].dropout_count += 1;
 
           const validDropouts = groupInfo.today_members.filter((member) => {
             const memberId = Object.keys(member)[0];
-            const addTime = new Date(member[memberId].add_datetime);
-            const removeTime = new Date(member[memberId].remove_datetime);
-            return removeTime && addTime && removeTime - addTime < 24 * 60 * 60 * 1000;
+            const mAddDatetime = new Date(member[memberId].add_datetime);
+            const mAddLocalDate = new Date(mAddDatetime.getTime() - mAddDatetime.getTimezoneOffset() * 60000);
+            const mEntryDate = mAddLocalDate.toISOString().split("T")[0];
+
+            const removeDatetime = member[memberId].remove_datetime ? new Date(member[memberId].remove_datetime) : null;
+            return removeDatetime && removeDatetime - mAddDatetime < 24 * 60 * 60 * 1000 && mEntryDate === entryDate;
           });
 
           const totalDropoutTime = validDropouts.reduce((total, member) => {
             const memberId = Object.keys(member)[0];
-            const addTime = new Date(member[memberId].add_datetime);
-            const removeTime = new Date(member[memberId].remove_datetime);
-            return total + (removeTime - addTime);
+            const mAddDatetime = new Date(member[memberId].add_datetime);
+            const removeDatetime = new Date(member[memberId].remove_datetime);
+            return total + (removeDatetime - mAddDatetime);
           }, 0);
 
-          dailyStats[currentDate].dropout_time = totalDropoutTime / validDropouts.length || 0;
+          entryDayStats[entryDate].dropout_time = totalDropoutTime / (validDropouts.length || 1);
         } else {
           const memberIndex = groupInfo.today_members.indexOf(existingMember);
           if (memberIndex !== -1) {
