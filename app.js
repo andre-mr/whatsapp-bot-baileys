@@ -666,12 +666,12 @@ async function runWhatsAppBot() {
       let currentSendMethod = Config.DEFAULT_SEND_METHOD;
       const waMessage = MessagePool.shift();
 
-      let imageCaption, imageBuffer, thumbnailBufferBase64;
+      const originalMessageContent = waMessage?.message?.extendedTextMessage?.text || waMessage.message?.conversation;
+      let imageBuffer, thumbnailBufferBase64;
 
       if (currentSendMethod == SendMethods.IMAGE) {
         try {
-          imageCaption = waMessage?.message?.extendedTextMessage?.text || waMessage.message?.conversation;
-          const urlMatch = imageCaption?.match(/https?:\/\/[^\s]+/);
+          const urlMatch = originalMessageContent?.match(/https?:\/\/[^\s]+/);
 
           if (!urlMatch) {
             throw new Error("Erro ao preparar imagem: nenhuma URL na mensagem!");
@@ -736,12 +736,7 @@ async function runWhatsAppBot() {
 
         const groupNameNormalized = normalizeGroupName(chat.subject);
 
-        let finalContent;
-        if (currentSendMethod === SendMethods.IMAGE && imageCaption) {
-          finalContent = modifyMessageLinks(imageCaption, groupNameNormalized);
-        } else {
-          finalContent = modifyMessageLinks(originalMessageContent, groupNameNormalized);
-        }
+        const finalContent = modifyMessageLinks(originalMessageContent, groupNameNormalized);
 
         try {
           switch (currentSendMethod) {
