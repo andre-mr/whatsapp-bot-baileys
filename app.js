@@ -635,8 +635,8 @@ async function runWhatsAppBot() {
     }
 
     function modifyMessageLinks(messageContent, groupNameNormalized) {
-      if (!messageContent) return messageContent;
       const domains = Config.LINK_TRACKING_DOMAINS || [];
+      if (!messageContent || domains.length <= 0) return messageContent;
       const urlRegex = /https?:\/\/[^\s]+/g;
 
       return messageContent.replace(urlRegex, (url) => {
@@ -647,13 +647,8 @@ async function runWhatsAppBot() {
 
           const urlObj = new URL(url);
 
-          if (!urlObj.searchParams.has("utm_source")) {
-            urlObj.searchParams.append("utm_source", "whatsapp");
-          }
-
-          if (!urlObj.searchParams.has("utm_medium")) {
-            urlObj.searchParams.append("utm_medium", groupNameNormalized);
-          }
+          urlObj.searchParams.set("utm_source", "whatsapp");
+          urlObj.searchParams.set("utm_medium", groupNameNormalized);
 
           return urlObj.toString();
         } catch (e) {
