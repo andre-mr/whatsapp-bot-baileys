@@ -76,7 +76,7 @@ async function clearOldFiles(directory, retentionDays) {
   try {
     const files = await fs.promises.readdir(dirPath);
 
-    if (files.length === 0) {
+    if (!files || files.length === 0) {
       // consoleLogColor("Nenhum arquivo encontrado no diretório.", ConsoleColors.YELLOW);
       return;
     }
@@ -104,7 +104,7 @@ async function clearOldFiles(directory, retentionDays) {
 
     const filesToRemove = filesStats.filter((file) => file.mtime < retentionLimit);
 
-    if (filesToRemove.length > 0) {
+    if (!filesToRemove || filesToRemove.length > 0) {
       await Promise.all(
         filesToRemove.map(async (file) => {
           await fs.promises.unlink(file.path);
@@ -122,7 +122,7 @@ async function clearAllFiles(directory) {
   try {
     const files = await fs.promises.readdir(dirPath);
 
-    if (files.length === 0) {
+    if (!files || files.length === 0) {
       // consoleLogColor("Nenhum arquivo encontrado no diretório.", ConsoleColors.YELLOW);
       return true;
     }
@@ -148,15 +148,20 @@ async function clearAllFiles(directory) {
 }
 
 async function saveErrorLog(logMessage) {
+  const MAX_LOG_LINES = 1000;
   try {
     const logFilePath = path.join(__dirname, "./modules/errors.log");
     const errorMessage = `[${new Date().toLocaleString()}] ${logMessage}\n`;
 
-    fs.appendFile(logFilePath, errorMessage, (err) => {
-      if (err) {
-        consoleLogColor(`Erro ao salvar log: ${err.message}`, ConsoleColors.RED);
-      }
-    });
+    fs.appendFileSync(logFilePath, errorMessage);
+
+    const logData = fs.readFileSync(logFilePath, "utf-8");
+    const logLines = logData.split("\n").filter((line) => line.trim() !== "");
+
+    if (logLines.length > MAX_LOG_LINES) {
+      const trimmedLogLines = logLines.slice(logLines.length - MAX_LOG_LINES);
+      fs.writeFileSync(logFilePath, trimmedLogLines.join("\n") + "\n");
+    }
   } catch (err) {
     consoleLogColor("Erro ao salvar o arquivo de configuração: " + err, ConsoleColors.RED);
   }
@@ -364,7 +369,6 @@ function waitForQRGeneration() {
   });
 }
 
-// Main function that controls the WhatsApp connection
 async function runWhatsAppBot() {
   consoleLogColor("Iniciando a aplicação...", ConsoleColors.BRIGHT, true);
 
@@ -523,7 +527,12 @@ async function runWhatsAppBot() {
             return `(${areaCode}) ${part1}-${part2}`;
           });
 
-        const messageContent = waMessage.message?.conversation || waMessage?.message?.extendedTextMessage?.text;
+        const messageContent =
+          waMessage.message?.conversation ||
+          waMessage?.message?.extendedTextMessage?.text ||
+          waMessage?.message?.imageMessage?.caption ||
+          waMessage?.message?.videoMessage?.caption;
+
         if (messageContent && /^(status|\?)$/i.test(messageContent.trim())) {
           consoleLogColor(`Status solicitado por: ${formattedNumber}`, ConsoleColors.YELLOW);
           const currentStatus = isSending
@@ -551,7 +560,11 @@ async function runWhatsAppBot() {
 
             sendReportMessage(sock, sender, statsMessage, waMessage);
           }
-        } else if (messageContent.length > 20 && messageContent.includes("http")) {
+        } else if (
+          (messageContent && messageContent.length >= 20) ||
+          waMessage?.message?.imageMessage ||
+          waMessage?.message?.videoMessage
+        ) {
           {
             consoleLogColor(`Mensagem ${waMessage.key.id} recebida de: ${formattedNumber}`, ConsoleColors.YELLOW);
             const messageExistsInPool =
@@ -636,7 +649,7 @@ async function runWhatsAppBot() {
 
     function modifyMessageLinks(messageContent, groupNameNormalized) {
       const domains = Config.LINK_TRACKING_DOMAINS || [];
-      if (!messageContent || domains.length <= 0) return messageContent;
+      if (!messageContent || !domains || domains.length <= 0) return messageContent;
       const urlRegex = /https?:\/\/[^\s]+/g;
 
       return messageContent.replace(urlRegex, (url) => {
@@ -661,8 +674,18 @@ async function runWhatsAppBot() {
       let currentSendMethod = Config.DEFAULT_SEND_METHOD;
       const waMessage = MessagePool.shift();
 
-      const originalMessageContent = waMessage?.message?.extendedTextMessage?.text || waMessage.message?.conversation;
+      const originalMessageContent =
+        waMessage?.message?.extendedTextMessage?.text ||
+        waMessage.message?.conversation ||
+        waMessage?.message?.imageMessage?.caption ||
+        waMessage?.message?.videoMessage?.caption;
+
       let imageBuffer, thumbnailBufferBase64;
+
+      if (waMessage?.message?.imageMessage || waMessage?.message?.videoMessage) {
+        consoleLogColor("Mídia detectada! Alterando temporariamente para encaminhamento.", ConsoleColors.YELLOW);
+        currentSendMethod = SendMethods.FORWARD;
+      }
 
       if (currentSendMethod == SendMethods.IMAGE) {
         try {
@@ -863,10 +886,10 @@ async function runWhatsAppBot() {
 
 const startApp = async () => {
   await clearOldFiles("./auth", 2);
-
   ({ state, saveCreds } = await useMultiFileAuthState("auth"));
   currentVersion = await getWhatsAppVersion();
   setupInputListener();
+
   runWhatsAppBot();
 };
 

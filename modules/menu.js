@@ -408,9 +408,9 @@ function removeItem(option, optionName, rl) {
         true
       );
       if (valueToRemove && valueToRemove.trim() !== "") {
-        const initialLength = Config[option].length;
+        const initialLength = Config[option]?.length;
         Config[option] = Config[option].filter((item) => item !== valueToRemove.trim());
-        if (Config[option].length < initialLength) {
+        if (Config[option]?.length < initialLength) {
           saveConfig();
           consoleLogColor(
             `${valueToRemove.trim()} removido de ${optionName.toLowerCase()}.`,
